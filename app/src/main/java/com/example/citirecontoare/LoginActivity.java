@@ -2,7 +2,6 @@ package com.example.citirecontoare;
 
 import android.content.Intent;
 import android.os.Bundle;
-import android.text.TextUtils;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -15,9 +14,6 @@ import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.FirebaseUser;
-
-
-import java.text.BreakIterator;
 
 public class LoginActivity extends AppCompatActivity {
 
@@ -69,29 +65,24 @@ public class LoginActivity extends AppCompatActivity {
                             @Override
                             public void onComplete(@NonNull Task<AuthResult> task) {
                                 if (task.isSuccessful()) {
+                                    // Preluăm user-ul care tocmai s-a logat cu succes
+                                    FirebaseUser user = firebaseAuth.getCurrentUser();
 
-                                    if(user != null)
-                                        if(user.isEmailVerified()) {
-                                            startActivity(new Intent(LoginActivity.this, AfterLogIn.class));
+                                    if (user != null) {
+                                        if (user.isEmailVerified()) {
+                                            // CORECȚIE: Mergem la Dashboard, NU la LocationList
+                                            Intent intent = new Intent(LoginActivity.this, DashboardActivity.class);
+                                            startActivity(intent);
                                             finish();
-                                        }
-                                        else
-                                        {
-                                            Toast.makeText(LoginActivity.this, "Verificati adresa de email.",
+                                        } else {
+                                            Toast.makeText(LoginActivity.this, "Vă rugăm verificați adresa de email.",
                                                     Toast.LENGTH_SHORT).show();
+                                            firebaseAuth.signOut(); // Îl scoatem afară dacă nu e verificat
                                         }
-
-                                } else {
-                                    if (password.length() < 6) {
-                                        Toast.makeText(LoginActivity.this, "Parola trebuie sa aiba cel putin 6 caractere.",
-                                                Toast.LENGTH_LONG).show();
-                                    } else {
-
-
-                                        Toast.makeText(LoginActivity.this, "Autentificare esuata.",
-                                                Toast.LENGTH_SHORT).show();
                                     }
-
+                                } else {
+                                    // Logica de eroare rămâne la fel...
+                                    Toast.makeText(LoginActivity.this, "Autentificare eșuată.", Toast.LENGTH_SHORT).show();
                                 }
                             }
                         });

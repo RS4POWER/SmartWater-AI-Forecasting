@@ -17,22 +17,22 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.CitireContoare"
+        android:theme="@style/Theme.SmartWaterAIForecasting"
         tools:targetApi="31">
         <activity
             android:name=".OCRCameraActivity"
             android:exported="false" />
         <activity
-            android:name=".HouseDetailsActivity"
+            android:name=".MeterReadingActivity"
             android:exported="false" />
         <activity
-            android:name=".HouseNumbersActivity"
+            android:name=".LocationListActivity"
             android:exported="false" />
         <activity
             android:name=".LocatiiCitire"
             android:exported="false" />
         <activity
-            android:name=".AfterLogIn"
+            android:name=".DashboardActivity"
             android:exported="false" />
         <activity
             android:name=".ResetPasswordActivity"

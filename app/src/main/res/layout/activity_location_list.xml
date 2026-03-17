@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp"
+    android:background="@color/RoyalBlue">
+
+    <ImageButton
+        android:id="@+id/buttonBack"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:src="@drawable/back_button_image"
+        android:contentDescription="Back Button" />
+
+    <TextView
+        android:id="@+id/textViewZoneName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="10dp"
+        android:textColor="@color/white"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:text="Zone Name" />
+
+    <ListView
+        android:id="@+id/listViewHouses"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/textViewZoneName"
+        android:layout_above="@id/buttonDownloadData"
+        android:layout_marginTop="20dp"
+        android:layout_marginBottom="20dp"
+        android:divider="@android:color/white"
+        android:dividerHeight="1dp" />
+
+    <Button
+        android:id="@+id/buttonDownloadData"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:text="Download Data (JSON)"
+        android:backgroundTint="@color/white"
+        android:textColor="@color/RoyalBlue" />
+
+</RelativeLayout>
