@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <ImageButton
+        android:id="@+id/backButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:padding="8dp"
+        android:src="@drawable/back_button_image" />
+
+    <TextView
+        android:id="@+id/zoneNameTextView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:layout_marginStart="200dp"
+        android:layout_marginTop="14dp"
+        android:layout_toEndOf="@id/backButton"
+        android:textColor="@color/RoyalBlue"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:text="Zone Name"
+        android:textAppearance="?attr/textAppearanceListItem" />
+
+    <View
+        android:id="@+id/divider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@android:color/darker_gray"
+        android:layout_below="@id/backButton"
+        android:layout_marginTop="16dp"/>
+
+    <ScrollView
+        android:id="@+id/scrollView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_above="@+id/secondDivider"
+        android:layout_below="@id/divider">
+
+        <LinearLayout
+            android:id="@+id/housesContainer"
+            android:orientation="vertical"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_above = "@id/secondDivider">
+            <!-- Dinamic buttons will be added here -->
+        </LinearLayout>
+    </ScrollView>
+
+    <View
+        android:id="@+id/secondDivider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@android:color/darker_gray"
+        android:layout_above="@id/downloadButton"
+        android:layout_marginTop="16dp"/>
+
+    <Button
+        android:id="@+id/downloadButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Download Data"
+        android:layout_centerHorizontal="true"
+        android:layout_alignParentBottom="true"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp"
+        android:backgroundTint="@color/RoyalBlue"/>
+
+
+
+</RelativeLayout>
