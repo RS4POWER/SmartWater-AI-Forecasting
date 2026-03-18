@@ -121,7 +121,7 @@
                 <EditText android:id="@+id/consumptionEditText" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/border" android:hint="Calculated" android:inputType="numberDecimal" android:padding="10dp" />
 
                 <TextView style="@style/LabelText" android:text="Reading Date:" />
-                <EditText android:id="@+id/readingDateEditText" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/border" android:hint="YYYY-MM-DD" android:padding="10dp" />
+                <EditText android:id="@+id/readingDateEditText" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/border" android:hint="YYYY-MM-DD" android:padding="10dp" android:focusable="false" android:clickable="true" />
 
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:orientation="horizontal">
                     <Button android:id="@+id/prevMonthButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Prev Month" />

@@ -29,9 +29,6 @@
             android:name=".LocationListActivity"
             android:exported="false" />
         <activity
-            android:name=".LocatiiCitire"
-            android:exported="false" />
-        <activity
             android:name=".DashboardActivity"
             android:exported="false" />
         <activity

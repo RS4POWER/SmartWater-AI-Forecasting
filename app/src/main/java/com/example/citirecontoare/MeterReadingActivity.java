@@ -114,6 +114,21 @@ public class MeterReadingActivity extends AppCompatActivity {
         previousYearButton.setOnClickListener(v -> { currentYear--; refresh(); });
         nextYearButton.setOnClickListener(v -> { currentYear++; refresh(); });
 
+        readingDateEditText.setOnClickListener(v -> {
+            final Calendar c = Calendar.getInstance();
+            int year = c.get(Calendar.YEAR);
+            int month = c.get(Calendar.MONTH);
+            int day = c.get(Calendar.DAY_OF_MONTH);
+
+            android.app.DatePickerDialog datePickerDialog = new android.app.DatePickerDialog(this,
+                    (view, year1, monthOfYear, dayOfMonth) -> {
+                        // Formatăm frumos dd-MM-yyyy
+                        String selectedDate = String.format("%02d-%02d-%d", dayOfMonth, (monthOfYear + 1), year1);
+                        readingDateEditText.setText(selectedDate);
+                    }, year, month, day);
+            datePickerDialog.show();
+        });
+
         previousMonthButton.setOnClickListener(v -> {
             if (currentMonth > 0) currentMonth--;
             else { currentMonth = 11; currentYear--; }
@@ -167,18 +182,31 @@ public class MeterReadingActivity extends AppCompatActivity {
     }
 
     private void loadApometruDetails(Long houseNumber, int year, int month) {
+        // PASUL 1: Curățăm ecranul ÎNAINTE de a cere date noi
+        meterIndexEditText.setText("0");
+        consumptionEditText.setText("0");
+        readingDateEditText.setText("");
+        anomalyWarningTextView.setVisibility(View.GONE);
+
         getMonthRef(houseNumber, year, month).get().addOnSuccessListener(doc -> {
             if (doc.exists()) {
+                // PASUL 2: Dacă găsim date, le punem pe ecran
                 Long index = doc.getLong("Starea Apometrului");
                 meterIndexEditText.setText(index != null ? String.valueOf(index) : "0");
 
                 Long consum = doc.getLong("Consumatia mc");
                 consumptionEditText.setText(consum != null ? String.valueOf(consum) : "0");
-                readingDateEditText.setText(doc.getString("Data citire"));
 
-                // MASTER FEATURE: Verificam anomalii de consum
+                String dataCitire = doc.getString("Data citire");
+                readingDateEditText.setText(dataCitire != null ? dataCitire : "");
+
                 if (consum != null) checkConsumptionAnomaly(consum);
+            } else {
+                // PASUL 3: Dacă documentul NU există, lăsăm valorile pe 0 (deja setate mai sus)
+                Log.d(TAG, "Nu există date pentru " + monthNames[month] + " " + year);
             }
+        }).addOnFailureListener(e -> {
+            Log.e(TAG, "Eroare la încărcare: " + e.getMessage());
         });
     }
 
@@ -192,12 +220,18 @@ public class MeterReadingActivity extends AppCompatActivity {
             anomalyWarningTextView.setVisibility(View.GONE);
         }
     }
+    // Modificăm semnătura: primim int monthIndex (0-11)
+    private DocumentReference getMonthRef(long houseNumber, int year, int monthIndex) {
+        // Ne asigurăm că indexul nu iese din limite (siguranță de Master)
+        if (monthIndex < 0) monthIndex = 0;
+        if (monthIndex > 11) monthIndex = 11;
 
-    private DocumentReference getMonthRef(Long houseNumber, int year, int month) {
-        if (month < 0) { year--; month = 11; }
-        return db.collection("zones").document(zoneName).collection("numereCasa")
-                .document("Numarul " + houseNumber).collection("consumApa")
-                .document(String.valueOf(year)).collection("lunile").document(monthNames[month]);
+        String monthName = monthNames[monthIndex]; // Transformăm 1 în "Februarie"
+
+        return db.collection("zones").document(zoneName)
+                .collection("numereCasa").document("Numarul " + houseNumber)
+                .collection("consumApa").document(String.valueOf(year))
+                .collection("lunile").document(monthName);
     }
 
     private void toggleEditMode(boolean mode) {
@@ -211,20 +245,83 @@ public class MeterReadingActivity extends AppCompatActivity {
     }
 
     private void saveHouseDetails() {
+        String diameterStr = diameterEditText.getText().toString().trim();
+        long diameterValue = 0;
+
+        if (!diameterStr.isEmpty()) {
+            try {
+                diameterValue = Long.parseLong(diameterStr);
+            } catch (NumberFormatException e) {
+                Toast.makeText(this, "Diametrul trebuie să fie un număr!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+        }
+
         Map<String, Object> data = new HashMap<>();
         data.put("Apometru marca", brandEditText.getText().toString());
         data.put("Seria", serialEditText.getText().toString());
-        data.put("Diametru apometru", Long.parseLong(diameterEditText.getText().toString()));
+        data.put("Diametru apometru", diameterValue);
         data.put("Instalat la", installationDateEditText.getText().toString());
-        db.collection("zones").document(zoneName).collection("numereCasa").document("Numarul " + houseNumber).update(data);
+
+        // Folosim .set(..., merge) și aici pentru siguranță maximă
+        db.collection("zones").document(zoneName).collection("numereCasa")
+                .document("Numarul " + houseNumber)
+                .set(data, com.google.firebase.firestore.SetOptions.merge())
+                .addOnSuccessListener(aVoid -> Toast.makeText(this, "Specificații apometru salvate!", Toast.LENGTH_SHORT).show());
     }
 
     private void saveApometruDetails() {
-        Map<String, Object> data = new HashMap<>();
-        data.put("Starea Apometrului", Long.parseLong(meterIndexEditText.getText().toString()));
-        data.put("Consumatia mc", Long.parseLong(consumptionEditText.getText().toString()));
-        data.put("Data citire", readingDateEditText.getText().toString());
-        getMonthRef(houseNumber, currentYear, currentMonth).update(data);
+        String indexStr = meterIndexEditText.getText().toString().trim();
+        String manualDate = readingDateEditText.getText().toString().trim();
+        int actualYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR);
+
+        // 1. Verificare an viitor (Păstrăm siguranța!)
+        if (currentYear > actualYear) {
+            Toast.makeText(this, "⚠️ Nu poți salva date pentru viitor!", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        // 2. Validare Index (Nu lăsăm câmpuri goale)
+        if (indexStr.isEmpty()) {
+            Toast.makeText(this, "Introdu Indexul Apometrului!", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // 3. Logica pentru DATA (Format dd-MM-yyyy + Default la azi)
+        String dateToSave;
+        if (manualDate.isEmpty()) {
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("dd-MM-yyyy", java.util.Locale.getDefault());
+            dateToSave = sdf.format(new java.util.Date());
+        } else {
+            dateToSave = manualDate;
+        }
+
+        try {
+            long indexValue = Long.parseLong(indexStr);
+            String consStr = consumptionEditText.getText().toString().trim();
+            long consumptionValue = consStr.isEmpty() ? 0 : Long.parseLong(consStr);
+
+            // 4. Pregătim datele pentru Firebase
+            Map<String, Object> data = new HashMap<>();
+            data.put("Starea Apometrului", indexValue);
+            data.put("Consumatia mc", consumptionValue);
+            data.put("Data citire", dateToSave);
+
+            // 5. Salvarea efectivă cu .set(..., merge)
+            getMonthRef(houseNumber, currentYear, currentMonth)
+                    .set(data, com.google.firebase.firestore.SetOptions.merge())
+                    .addOnSuccessListener(aVoid -> {
+                        Toast.makeText(this, "Salvare reușită: " + dateToSave, Toast.LENGTH_SHORT).show();
+                        readingDateEditText.setText(dateToSave); // Punem data în UI dacă era gol
+                    })
+                    .addOnFailureListener(e -> {
+                        Log.e(TAG, "Eroare Firebase: " + e.getMessage());
+                        Toast.makeText(this, "Eroare permisiuni/rețea!", Toast.LENGTH_SHORT).show();
+                    });
+
+        } catch (NumberFormatException e) {
+            Toast.makeText(this, "Te rugăm să introduci doar cifre!", Toast.LENGTH_LONG).show();
+        }
     }
 
     // --- AI & OCR Section ---
@@ -263,13 +360,34 @@ public class MeterReadingActivity extends AppCompatActivity {
     }
 
     private void calculateAndSaveConsum() {
+        int prevMonth = currentMonth - 1;
+        int prevYear = currentYear;
+
+        if (prevMonth < 0) {
+            prevMonth = 11;
+            prevYear--;
+        }
+
+        final int finalPrevYear = prevYear;
+        final int finalPrevMonth = prevMonth;
+
         getMonthRef(houseNumber, currentYear, currentMonth).get().addOnSuccessListener(curr -> {
-            getMonthRef(houseNumber, currentYear, currentMonth - 1).get().addOnSuccessListener(prev -> {
+            getMonthRef(houseNumber, finalPrevYear, finalPrevMonth).get().addOnSuccessListener(prev -> {
                 long c = curr.getLong("Starea Apometrului") != null ? curr.getLong("Starea Apometrului") : 0;
                 long p = prev.exists() && prev.getLong("Starea Apometrului") != null ? prev.getLong("Starea Apometrului") : 0;
-                long res = c - p;
+
+                // FIX: Calculăm direct valoarea finală fără să o mai modificăm ulterior
+                final long res = Math.max(0, c - p);
+
                 consumptionEditText.setText(String.valueOf(res));
-                getMonthRef(houseNumber, currentYear, currentMonth).update("Consumatia mc", res);
+
+                // Salvăm rezultatul folosind .update() pentru că documentul de consum EXISTĂ deja (l-am citit mai sus)
+                getMonthRef(houseNumber, currentYear, currentMonth).update("Consumatia mc", res)
+                        .addOnSuccessListener(aVoid -> {
+                            Toast.makeText(MeterReadingActivity.this, "Consum calculat: " + res, Toast.LENGTH_SHORT).show();
+                        })
+                        .addOnFailureListener(e -> Log.e(TAG, "Eroare update consum", e));
+
                 checkConsumptionAnomaly(res);
             });
         });
