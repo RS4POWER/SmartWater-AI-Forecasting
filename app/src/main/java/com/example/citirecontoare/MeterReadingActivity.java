@@ -359,37 +359,59 @@ public class MeterReadingActivity extends AppCompatActivity {
         });
     }
 
+    // Variabilă pentru a limita căutarea (să nu caute la infinit dacă e casă nouă)
+    private int searchDepth = 0;
+
     private void calculateAndSaveConsum() {
+        searchDepth = 0; // Resetăm adâncimea de căutare
+
+        // Luăm indexul curent introdus de muncitor
+        String currentIdxStr = meterIndexEditText.getText().toString().trim();
+        if (currentIdxStr.isEmpty()) {
+            Toast.makeText(this, "Introdu indexul actual întâi!", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        long currentIndex = Long.parseLong(currentIdxStr);
+
+        // Începem căutarea în spate, pornind de la luna trecută
         int prevMonth = currentMonth - 1;
         int prevYear = currentYear;
+        if (prevMonth < 0) { prevMonth = 11; prevYear--; }
 
-        if (prevMonth < 0) {
-            prevMonth = 11;
-            prevYear--;
+        findLastReadingRecursive(prevYear, prevMonth, currentIndex);
+    }
+
+    private void findLastReadingRecursive(int year, int month, long currentIndex) {
+        searchDepth++;
+        // Limităm căutarea la ultimele 24 de luni (2 ani)
+        if (searchDepth > 24) {
+            finalizeConsumption(currentIndex, 0); // Nu am găsit nimic în 2 ani, presupunem 0
+            return;
         }
 
-        final int finalPrevYear = prevYear;
-        final int finalPrevMonth = prevMonth;
-
-        getMonthRef(houseNumber, currentYear, currentMonth).get().addOnSuccessListener(curr -> {
-            getMonthRef(houseNumber, finalPrevYear, finalPrevMonth).get().addOnSuccessListener(prev -> {
-                long c = curr.getLong("Starea Apometrului") != null ? curr.getLong("Starea Apometrului") : 0;
-                long p = prev.exists() && prev.getLong("Starea Apometrului") != null ? prev.getLong("Starea Apometrului") : 0;
-
-                // FIX: Calculăm direct valoarea finală fără să o mai modificăm ulterior
-                final long res = Math.max(0, c - p);
-
-                consumptionEditText.setText(String.valueOf(res));
-
-                // Salvăm rezultatul folosind .update() pentru că documentul de consum EXISTĂ deja (l-am citit mai sus)
-                getMonthRef(houseNumber, currentYear, currentMonth).update("Consumatia mc", res)
-                        .addOnSuccessListener(aVoid -> {
-                            Toast.makeText(MeterReadingActivity.this, "Consum calculat: " + res, Toast.LENGTH_SHORT).show();
-                        })
-                        .addOnFailureListener(e -> Log.e(TAG, "Eroare update consum", e));
-
-                checkConsumptionAnomaly(res);
-            });
+        getMonthRef(houseNumber, year, month).get().addOnSuccessListener(doc -> {
+            if (doc.exists() && doc.contains("Starea Apometrului")) {
+                long lastIndex = doc.getLong("Starea Apometrului");
+                finalizeConsumption(currentIndex, lastIndex);
+            } else {
+                // Nu am găsit în această lună, mergem o lună mai în spate
+                int nextYear = year;
+                int nextMonth = month - 1;
+                if (nextMonth < 0) { nextMonth = 11; nextYear--; }
+                findLastReadingRecursive(nextYear, nextMonth, currentIndex);
+            }
         });
+    }
+
+    private void finalizeConsumption(long current, long last) {
+        long result = Math.max(0, current - last);
+        consumptionEditText.setText(String.valueOf(result));
+
+        // Salvăm în Firebase
+        getMonthRef(houseNumber, currentYear, currentMonth).update("Consumatia mc", result)
+                .addOnSuccessListener(aVoid -> {
+                    Toast.makeText(this, "Consum calculat față de ultima citire găsită!", Toast.LENGTH_SHORT).show();
+                    checkConsumptionAnomaly(result);
+                });
     }
 }

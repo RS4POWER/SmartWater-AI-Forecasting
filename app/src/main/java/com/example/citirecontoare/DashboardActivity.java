@@ -82,25 +82,20 @@ public class DashboardActivity extends AppCompatActivity {
 
         primaryZoneButton.setOnClickListener(view -> {
             String zone = primaryZoneButton.getText().toString();
-            Log.d(TAG, "DEBUG: Clicked Primary Button. Text is: '" + zone + "'");
-
-            // Verificăm dacă textul e cel default sau gol
-            if (zone.isEmpty() || zone.equals("Button") || zone.equals("Zone 1")) { // depinde ce hint ai in XML
-                Toast.makeText(this, "Please wait, zones are still loading...", Toast.LENGTH_SHORT).show();
+            // Verificăm dacă e încă în starea de încărcare
+            if (zone.isEmpty() || zone.equals("Button") || !primaryZoneButton.isEnabled()) {
+                Toast.makeText(this, "Se încarcă zonele, te rugăm așteaptă...", Toast.LENGTH_SHORT).show();
             } else {
                 navigateToLocationList(zone);
             }
         });
+
         logoutButton.setOnClickListener(v -> {
             FirebaseAuth.getInstance().signOut();
             startActivity(new Intent(DashboardActivity.this, MainActivity.class));
             finish();
         });
 
-        primaryZoneButton.setOnClickListener(view -> {
-            String zone = primaryZoneButton.getText().toString();
-            if(!zone.isEmpty()) navigateToLocationList(zone);
-        });
 
         secondaryZoneButton.setOnClickListener(view -> {
             String zone = secondaryZoneButton.getText().toString();
