@@ -1,0 +1,38 @@
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="8dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="4dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <TextView
+            android:id="@+id/textDate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="18-03-2026 17:22"
+            android:textStyle="bold"
+            android:textColor="@color/RoyalBlue" />
+
+        <TextView
+            android:id="@+id/textRoute"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Traseu: Casa 1 -> Casa 30"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/textDuration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Durată: 45 min"
+            android:textColor="#D32F2F"
+            android:textStyle="bold" />
+    </LinearLayout>
+</androidx.cardview.widget.CardView>

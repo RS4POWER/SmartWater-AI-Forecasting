@@ -69,6 +69,13 @@ public class LocationListActivity extends AppCompatActivity {
         Button exportButton = findViewById(R.id.buttonDownloadData);
         exportButton.setOnClickListener(v -> exportConsumptionData());
 
+        Button perfButton = findViewById(R.id.buttonPerformance);
+        perfButton.setOnClickListener(v -> {
+            Intent intent = new Intent(this, PerformanceHistoryActivity.class);
+            intent.putExtra("zoneName", selectedZone); // Trimitem zona ca să știm ce log-uri să tragem
+            startActivity(intent);
+        });
+
         // Listener pentru finalizarea traseului
         stopTrackingButton.setOnClickListener(v -> finalizeRoute());
     }
@@ -163,10 +170,9 @@ public class LocationListActivity extends AppCompatActivity {
         long durataMin = (endTime - startTime) / 1000 / 60;
 
         // Generăm un ID de document bazat pe dată (ex: 2026-03-18_17-12)
-        String idDocument = new SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.getDefault()).format(new Date());
+        String idDocument = new SimpleDateFormat("yyyy-MM-dd_HH:mm", Locale.getDefault()).format(new Date());
         String dataAfisare = new SimpleDateFormat("dd-MM-yyyy HH:mm", Locale.getDefault()).format(new Date());
 
-        // Curățăm "Romengleza" - Standardizăm pe Română (pentru Disertație)
         Map<String, Object> logData = new HashMap<>();
         logData.put("dataFinalizare", dataAfisare);
         logData.put("casaInceput", RouteTracker.getStartHouse(this));
