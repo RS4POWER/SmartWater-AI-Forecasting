@@ -318,17 +318,33 @@ public class MeterReadingActivity extends AppCompatActivity {
             long indexValue = Long.parseLong(meterIndexEditText.getText().toString().trim());
             long consumptionValue = Long.parseLong(consumptionEditText.getText().toString().trim());
             String dateToSave = readingDateEditText.getText().toString().trim();
-            if (dateToSave.isEmpty()) dateToSave = new java.text.SimpleDateFormat("dd-MM-yyyy").format(new java.util.Date());
 
+            if (dateToSave.isEmpty())
+                dateToSave = new java.text.SimpleDateFormat("dd-MM-yyyy").format(new java.util.Date());
+
+            // REPARAȚIE: Inițializăm Map-ul corect dintr-o dată
             Map<String, Object> data = new HashMap<>();
             data.put("Starea Apometrului", indexValue);
             data.put("Consumatia mc", consumptionValue);
             data.put("Data citire", dateToSave);
 
+            // AICI legăm de restul sistemului: Salvăm timpul precis al citirii
+            data.put("timestamp", com.google.firebase.Timestamp.now());
+
             getMonthRef(houseNumber, currentYear, currentMonth)
                     .set(data, com.google.firebase.firestore.SetOptions.merge())
-                    .addOnSuccessListener(aVoid -> Toast.makeText(this, "Salvare reușită!", Toast.LENGTH_SHORT).show());
-        } catch (Exception e) { Toast.makeText(this, "Eroare la date!", Toast.LENGTH_SHORT).show(); }
+                    .addOnSuccessListener(aVoid -> {
+                        Toast.makeText(this, "Salvare reușită!", Toast.LENGTH_SHORT).show();
+
+                        // --- INTEGRARE CU PERFORMANCE TRACKING ---
+                        // Notificăm RouteTracker că am terminat de citit această casă
+                        RouteTracker.updateLastHouse(this, "Numarul " + houseNumber);
+                    })
+                    .addOnFailureListener(e -> Log.e(TAG, "Eroare salvare: " + e.getMessage()));
+
+        } catch (Exception e) {
+            Toast.makeText(this, "Eroare la date! Verifică cifrele.", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void requestCameraPermission() {
