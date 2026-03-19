@@ -7,7 +7,7 @@
     android:orientation="vertical"
     android:gravity="center"
     android:background="@color/RoyalBlue"
-    tools:context=".AfterLogIn">
+    tools:context=".DashboardActivity">
 
     <androidx.cardview.widget.CardView
         android:layout_width="match_parent"

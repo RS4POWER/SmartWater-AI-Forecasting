@@ -167,8 +167,7 @@ public class LocationListActivity extends AppCompatActivity {
     private void finalizeRoute() {
         long startTime = RouteTracker.getStartTime(this);
         long endTime = System.currentTimeMillis();
-        long durataMin = (endTime - startTime) / 1000 / 60;
-
+        long durataMin = Math.round((endTime - startTime) / 60000.0);
         // Generăm un ID de document bazat pe dată (ex: 2026-03-18_17-12)
         String idDocument = new SimpleDateFormat("yyyy-MM-dd_HH:mm", Locale.getDefault()).format(new Date());
         String dataAfisare = new SimpleDateFormat("dd-MM-yyyy HH:mm", Locale.getDefault()).format(new Date());
