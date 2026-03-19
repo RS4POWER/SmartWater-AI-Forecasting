@@ -51,6 +51,8 @@
             android:exported="false" />
 
         <activity android:name=".PerformanceHistoryActivity" />
+        <activity android:name=".ForecastingViewActivity"
+            android:screenOrientation="portrait"/>
     </application>
 
 </manifest>

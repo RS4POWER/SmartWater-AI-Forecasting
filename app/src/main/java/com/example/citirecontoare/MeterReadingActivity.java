@@ -27,28 +27,31 @@ import com.google.mlkit.vision.text.TextRecognition;
 import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class MeterReadingActivity extends AppCompatActivity {
 
     private FirebaseFirestore db = FirebaseFirestore.getInstance();
 
-    // UI Elements - Potrivite fix cu ID-urile din XML-ul tau verde
     private TextView ownerNameTextView, houseNumberTextView, currentDateTextView, anomalyWarningTextView;
     private EditText brandEditText, serialEditText, diameterEditText, installationDateEditText;
     private EditText meterIndexEditText, consumptionEditText, readingDateEditText;
-
     private ImageButton backButton, previousYearButton, nextYearButton;
     private ImageButton editModeButton, cameraOcrButton, runAnalyticsButton;
     private Button previousMonthButton, nextMonthButton;
-
     private boolean isInEditMode = false;
     private int currentYear, currentMonth;
     private Long houseNumber;
     private String zoneName;
+    private TextView textPrediction, textAIStatus;
+    private double aiPredictedValue = 0;
+    private View aiDividerView;
 
+    private ArrayList<Double> lastFetchedHistory = new ArrayList<>();
     public String[] monthNames = {"Ianuarie", "Februarie", "Martie", "Aprilie", "Mai", "Iunie",
             "Iulie", "August", "Septembrie", "Octombrie", "Noiembrie", "Decembrie"};
 
@@ -59,7 +62,7 @@ public class MeterReadingActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_meter_reading);
 
-        // 1. Initializare UI (Stingem "rosul" prin legarea corecta a ID-urilor)
+        // UI Initialization
         ownerNameTextView = findViewById(R.id.ownerNameTextView);
         houseNumberTextView = findViewById(R.id.houseNumberTextView);
         currentDateTextView = findViewById(R.id.currentDateTextView);
@@ -76,26 +79,41 @@ public class MeterReadingActivity extends AppCompatActivity {
         backButton = findViewById(R.id.backButton);
         previousYearButton = findViewById(R.id.previousYearButton);
         nextYearButton = findViewById(R.id.nextYearButton);
-        previousMonthButton = findViewById(R.id.prevMonthButton); // ID-ul din noul XML
+        previousMonthButton = findViewById(R.id.prevMonthButton);
         nextMonthButton = findViewById(R.id.nextMonthButton);
 
         editModeButton = findViewById(R.id.editModeButton);
         cameraOcrButton = findViewById(R.id.cameraOcrButton);
         runAnalyticsButton = findViewById(R.id.runAnalyticsButton);
 
-        // 2. Setup Data & Intent
+        textPrediction = findViewById(R.id.textPrediction);
+        textAIStatus = findViewById(R.id.textAIStatus);
+
         currentYear = Calendar.getInstance().get(Calendar.YEAR);
         currentMonth = Calendar.getInstance().get(Calendar.MONTH);
+
+        aiDividerView = findViewById(R.id.aiDividerView);
 
         handleIntentData();
         updateDateDisplay();
         setupClickListeners();
 
-        // 3. Load Initial Data
         loadHouseDetails(houseNumber, zoneName);
         loadApometruDetails(houseNumber, currentYear, currentMonth);
         toggleEditMode(false);
-    } // AICI se inchide corect onCreate!
+
+        findViewById(R.id.btnShowChart).setOnClickListener(v -> {
+            if (lastFetchedHistory.isEmpty()) {
+                Toast.makeText(this, "Nu avem destule date pentru grafic!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Intent intent = new Intent(this, ForecastingViewActivity.class);
+            intent.putExtra("HISTORY_DATA", lastFetchedHistory);
+            startActivity(intent);
+        });
+
+        fetchHistoryAndRunAI();
+    }
 
     private void handleIntentData() {
         Intent intent = getIntent();
@@ -110,22 +128,16 @@ public class MeterReadingActivity extends AppCompatActivity {
 
     private void setupClickListeners() {
         backButton.setOnClickListener(v -> finish());
-
         previousYearButton.setOnClickListener(v -> { currentYear--; refresh(); });
         nextYearButton.setOnClickListener(v -> { currentYear++; refresh(); });
 
         readingDateEditText.setOnClickListener(v -> {
             final Calendar c = Calendar.getInstance();
-            int year = c.get(Calendar.YEAR);
-            int month = c.get(Calendar.MONTH);
-            int day = c.get(Calendar.DAY_OF_MONTH);
-
             android.app.DatePickerDialog datePickerDialog = new android.app.DatePickerDialog(this,
                     (view, year1, monthOfYear, dayOfMonth) -> {
-                        // Formatăm frumos dd-MM-yyyy
                         String selectedDate = String.format("%02d-%02d-%d", dayOfMonth, (monthOfYear + 1), year1);
                         readingDateEditText.setText(selectedDate);
-                    }, year, month, day);
+                    }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH));
             datePickerDialog.show();
         });
 
@@ -159,13 +171,12 @@ public class MeterReadingActivity extends AppCompatActivity {
         updateDateDisplay();
         loadHouseDetails(houseNumber, zoneName);
         loadApometruDetails(houseNumber, currentYear, currentMonth);
+        fetchHistoryAndRunAI();
     }
 
     private void updateDateDisplay() {
         currentDateTextView.setText(monthNames[currentMonth] + ", " + currentYear);
     }
-
-    // --- Firebase Logic ---
 
     private void loadHouseDetails(Long houseNumber, String zoneName) {
         db.collection("zones").document(zoneName).collection("numereCasa")
@@ -182,7 +193,6 @@ public class MeterReadingActivity extends AppCompatActivity {
     }
 
     private void loadApometruDetails(Long houseNumber, int year, int month) {
-        // PASUL 1: Curățăm ecranul ÎNAINTE de a cere date noi
         meterIndexEditText.setText("0");
         consumptionEditText.setText("0");
         readingDateEditText.setText("");
@@ -190,48 +200,25 @@ public class MeterReadingActivity extends AppCompatActivity {
 
         getMonthRef(houseNumber, year, month).get().addOnSuccessListener(doc -> {
             if (doc.exists()) {
-                // PASUL 2: Dacă găsim date, le punem pe ecran
                 Long index = doc.getLong("Starea Apometrului");
                 meterIndexEditText.setText(index != null ? String.valueOf(index) : "0");
-
                 Long consum = doc.getLong("Consumatia mc");
                 consumptionEditText.setText(consum != null ? String.valueOf(consum) : "0");
+                readingDateEditText.setText(doc.getString("Data citire"));
 
-                String dataCitire = doc.getString("Data citire");
-                readingDateEditText.setText(dataCitire != null ? dataCitire : "");
-
-                if (consum != null) checkConsumptionAnomaly(consum);
-            } else {
-                // PASUL 3: Dacă documentul NU există, lăsăm valorile pe 0 (deja setate mai sus)
-                Log.d(TAG, "Nu există date pentru " + monthNames[month] + " " + year);
+                // UTILIZĂM NOUL AI ÎN LOC DE VECHEA METODĂ
+                if (consum != null) compareActualWithAI((double) consum);
             }
-        }).addOnFailureListener(e -> {
-            Log.e(TAG, "Eroare la încărcare: " + e.getMessage());
         });
     }
 
-    private void checkConsumptionAnomaly(long currentConsum) {
-        // Logica de predictie: daca consumul sare de 20mc, e alerta de avarie
-        // Nota: Aici vei dezvolta in capitolul 5 algoritmul tau de cercetare
-        if (currentConsum > 20) {
-            anomalyWarningTextView.setVisibility(View.VISIBLE);
-            anomalyWarningTextView.setText("⚠ Warning: High consumption detected (" + currentConsum + " m³)");
-        } else {
-            anomalyWarningTextView.setVisibility(View.GONE);
-        }
-    }
-    // Modificăm semnătura: primim int monthIndex (0-11)
     private DocumentReference getMonthRef(long houseNumber, int year, int monthIndex) {
-        // Ne asigurăm că indexul nu iese din limite (siguranță de Master)
         if (monthIndex < 0) monthIndex = 0;
         if (monthIndex > 11) monthIndex = 11;
-
-        String monthName = monthNames[monthIndex]; // Transformăm 1 în "Februarie"
-
         return db.collection("zones").document(zoneName)
                 .collection("numereCasa").document("Numarul " + houseNumber)
                 .collection("consumApa").document(String.valueOf(year))
-                .collection("lunile").document(monthName);
+                .collection("lunile").document(monthNames[monthIndex]);
     }
 
     private void toggleEditMode(boolean mode) {
@@ -245,86 +232,37 @@ public class MeterReadingActivity extends AppCompatActivity {
     }
 
     private void saveHouseDetails() {
-        String diameterStr = diameterEditText.getText().toString().trim();
-        long diameterValue = 0;
-
-        if (!diameterStr.isEmpty()) {
-            try {
-                diameterValue = Long.parseLong(diameterStr);
-            } catch (NumberFormatException e) {
-                Toast.makeText(this, "Diametrul trebuie să fie un număr!", Toast.LENGTH_SHORT).show();
-                return;
-            }
-        }
-
         Map<String, Object> data = new HashMap<>();
         data.put("Apometru marca", brandEditText.getText().toString());
         data.put("Seria", serialEditText.getText().toString());
-        data.put("Diametru apometru", diameterValue);
+        try {
+            data.put("Diametru apometru", Long.parseLong(diameterEditText.getText().toString().trim()));
+        } catch (Exception e) { data.put("Diametru apometru", 0); }
         data.put("Instalat la", installationDateEditText.getText().toString());
 
-        // Folosim .set(..., merge) și aici pentru siguranță maximă
         db.collection("zones").document(zoneName).collection("numereCasa")
                 .document("Numarul " + houseNumber)
                 .set(data, com.google.firebase.firestore.SetOptions.merge())
-                .addOnSuccessListener(aVoid -> Toast.makeText(this, "Specificații apometru salvate!", Toast.LENGTH_SHORT).show());
+                .addOnSuccessListener(aVoid -> Toast.makeText(this, "Specificații salvate!", Toast.LENGTH_SHORT).show());
     }
 
     private void saveApometruDetails() {
-        String indexStr = meterIndexEditText.getText().toString().trim();
-        String manualDate = readingDateEditText.getText().toString().trim();
-        int actualYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR);
-
-        // 1. Verificare an viitor (Păstrăm siguranța!)
-        if (currentYear > actualYear) {
-            Toast.makeText(this, "⚠️ Nu poți salva date pentru viitor!", Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        // 2. Validare Index (Nu lăsăm câmpuri goale)
-        if (indexStr.isEmpty()) {
-            Toast.makeText(this, "Introdu Indexul Apometrului!", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        // 3. Logica pentru DATA (Format dd-MM-yyyy + Default la azi)
-        String dateToSave;
-        if (manualDate.isEmpty()) {
-            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("dd-MM-yyyy", java.util.Locale.getDefault());
-            dateToSave = sdf.format(new java.util.Date());
-        } else {
-            dateToSave = manualDate;
-        }
-
         try {
-            long indexValue = Long.parseLong(indexStr);
-            String consStr = consumptionEditText.getText().toString().trim();
-            long consumptionValue = consStr.isEmpty() ? 0 : Long.parseLong(consStr);
+            long indexValue = Long.parseLong(meterIndexEditText.getText().toString().trim());
+            long consumptionValue = Long.parseLong(consumptionEditText.getText().toString().trim());
+            String dateToSave = readingDateEditText.getText().toString().trim();
+            if (dateToSave.isEmpty()) dateToSave = new java.text.SimpleDateFormat("dd-MM-yyyy").format(new java.util.Date());
 
-            // 4. Pregătim datele pentru Firebase
             Map<String, Object> data = new HashMap<>();
             data.put("Starea Apometrului", indexValue);
             data.put("Consumatia mc", consumptionValue);
             data.put("Data citire", dateToSave);
 
-            // 5. Salvarea efectivă cu .set(..., merge)
             getMonthRef(houseNumber, currentYear, currentMonth)
                     .set(data, com.google.firebase.firestore.SetOptions.merge())
-                    .addOnSuccessListener(aVoid -> {
-                        Toast.makeText(this, "Salvare reușită: " + dateToSave, Toast.LENGTH_SHORT).show();
-                        readingDateEditText.setText(dateToSave); // Punem data în UI dacă era gol
-                    })
-                    .addOnFailureListener(e -> {
-                        Log.e(TAG, "Eroare Firebase: " + e.getMessage());
-                        Toast.makeText(this, "Eroare permisiuni/rețea!", Toast.LENGTH_SHORT).show();
-                    });
-
-        } catch (NumberFormatException e) {
-            Toast.makeText(this, "Te rugăm să introduci doar cifre!", Toast.LENGTH_LONG).show();
-        }
+                    .addOnSuccessListener(aVoid -> Toast.makeText(this, "Salvare reușită!", Toast.LENGTH_SHORT).show());
+        } catch (Exception e) { Toast.makeText(this, "Eroare la date!", Toast.LENGTH_SHORT).show(); }
     }
-
-    // --- AI & OCR Section ---
 
     private void requestCameraPermission() {
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -359,44 +297,29 @@ public class MeterReadingActivity extends AppCompatActivity {
         });
     }
 
-    // Variabilă pentru a limita căutarea (să nu caute la infinit dacă e casă nouă)
-    private int searchDepth = 0;
-
     private void calculateAndSaveConsum() {
-        searchDepth = 0; // Resetăm adâncimea de căutare
-
-        // Luăm indexul curent introdus de muncitor
         String currentIdxStr = meterIndexEditText.getText().toString().trim();
-        if (currentIdxStr.isEmpty()) {
-            Toast.makeText(this, "Introdu indexul actual întâi!", Toast.LENGTH_SHORT).show();
-            return;
-        }
+        if (currentIdxStr.isEmpty()) return;
         long currentIndex = Long.parseLong(currentIdxStr);
 
-        // Începem căutarea în spate, pornind de la luna trecută
         int prevMonth = currentMonth - 1;
         int prevYear = currentYear;
         if (prevMonth < 0) { prevMonth = 11; prevYear--; }
 
+        searchDepth = 0;
         findLastReadingRecursive(prevYear, prevMonth, currentIndex);
     }
 
+    private int searchDepth = 0;
     private void findLastReadingRecursive(int year, int month, long currentIndex) {
         searchDepth++;
-        // Limităm căutarea la ultimele 24 de luni (2 ani)
-        if (searchDepth > 24) {
-            finalizeConsumption(currentIndex, 0); // Nu am găsit nimic în 2 ani, presupunem 0
-            return;
-        }
+        if (searchDepth > 24) { finalizeConsumption(currentIndex, 0); return; }
 
         getMonthRef(houseNumber, year, month).get().addOnSuccessListener(doc -> {
             if (doc.exists() && doc.contains("Starea Apometrului")) {
-                long lastIndex = doc.getLong("Starea Apometrului");
-                finalizeConsumption(currentIndex, lastIndex);
+                finalizeConsumption(currentIndex, doc.getLong("Starea Apometrului"));
             } else {
-                // Nu am găsit în această lună, mergem o lună mai în spate
-                int nextYear = year;
-                int nextMonth = month - 1;
+                int nextYear = year, nextMonth = month - 1;
                 if (nextMonth < 0) { nextMonth = 11; nextYear--; }
                 findLastReadingRecursive(nextYear, nextMonth, currentIndex);
             }
@@ -406,12 +329,67 @@ public class MeterReadingActivity extends AppCompatActivity {
     private void finalizeConsumption(long current, long last) {
         long result = Math.max(0, current - last);
         consumptionEditText.setText(String.valueOf(result));
-
-        // Salvăm în Firebase
         getMonthRef(houseNumber, currentYear, currentMonth).update("Consumatia mc", result)
-                .addOnSuccessListener(aVoid -> {
-                    Toast.makeText(this, "Consum calculat față de ultima citire găsită!", Toast.LENGTH_SHORT).show();
-                    checkConsumptionAnomaly(result);
-                });
+                .addOnSuccessListener(aVoid -> compareActualWithAI((double) result));
+    }
+
+    private void runAIForecast(List<Double> consumHistory) {
+        aiPredictedValue = ForecastingEngine.predictNextConsumption(consumHistory);
+        textPrediction.setText(String.format("Predicție AI: %.2f m³", aiPredictedValue));
+        textAIStatus.setText("Trend: Analiză bazată pe ultimele " + consumHistory.size() + " luni");
+    }
+
+    private void compareActualWithAI(double consumIntrodus) {
+
+        if (aiPredictedValue == 0) return;
+        double deviatie = ((consumIntrodus - aiPredictedValue) / aiPredictedValue) * 100;
+        anomalyWarningTextView.setVisibility(View.GONE);
+
+        if (consumIntrodus > aiPredictedValue * 1.5) {
+            aiDividerView.setBackgroundColor(android.graphics.Color.RED);
+            textAIStatus.setText("⚠ ANOMALIE: +" + (int)deviatie + "% peste limita AI!");
+            textAIStatus.setTextColor(android.graphics.Color.RED);
+            findViewById(R.id.cardAI).setBackgroundColor(android.graphics.Color.parseColor("#FFF1F1"));
+        } else {
+            aiDividerView.setBackgroundColor(android.graphics.Color.parseColor("#2E7D32"));
+            textAIStatus.setText("✔ NORMAL: Consum în limitele de siguranță.");
+            textAIStatus.setTextColor(android.graphics.Color.parseColor("#2E7D32"));
+            findViewById(R.id.cardAI).setBackgroundColor(android.graphics.Color.parseColor("#F8FBFF"));
+        }
+    }
+
+    private void fetchHistoryAndRunAI() {
+        int monthsToBoard = 6;
+        List<Task<DocumentSnapshot>> tasks = new java.util.ArrayList<>();
+        int tempMonth = currentMonth, tempYear = currentYear;
+
+        for (int i = 0; i < monthsToBoard; i++) {
+            tempMonth--;
+            if (tempMonth < 0) { tempMonth = 11; tempYear--; }
+            tasks.add(getMonthRef(houseNumber, tempYear, tempMonth).get());
+        }
+
+        Tasks.whenAllSuccess(tasks).addOnSuccessListener(results -> {
+            lastFetchedHistory.clear();
+
+            // 1. Colectăm datele (ele vin în ordine inversă: Mai, Aprilie...)
+            for (Object res : results) {
+                DocumentSnapshot doc = (DocumentSnapshot) res;
+                if (doc.exists() && doc.contains("Consumatia mc")) {
+                    lastFetchedHistory.add(doc.getDouble("Consumatia mc"));
+                }
+            }
+
+            // 2. CRITICAL: Inversăm lista ca să avem [Ian, Feb, Mar, Apr, Mai]
+            java.util.Collections.reverse(lastFetchedHistory);
+
+            // 3. Acum rulăm AI-ul pe datele ordonate cronologic
+            if (lastFetchedHistory.size() >= 2) {
+                runAIForecast(lastFetchedHistory);
+            } else {
+                textPrediction.setText("AI: Date insuficiente");
+                textAIStatus.setText("Sunt necesare minim 2 luni de istoric.");
+            }
+        });
     }
 }
