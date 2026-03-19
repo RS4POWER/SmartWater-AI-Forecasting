@@ -206,7 +206,16 @@
                         android:text="Status: Calculare trend..."
                         android:textSize="14sp"
                         android:textColor="#555555" />
-
+                    <Button
+                        android:id="@+id/btnVerifyAI"
+                        android:layout_width="wrap_content"
+                        android:layout_height="35dp"
+                        android:layout_gravity="end"
+                        android:layout_marginTop="10dp"
+                        android:backgroundTint="@color/RoyalBlue"
+                        android:text="Validare Consum"
+                        android:textSize="10sp"
+                        android:visibility="gone" />
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 

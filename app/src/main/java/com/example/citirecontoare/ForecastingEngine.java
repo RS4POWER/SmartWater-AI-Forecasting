@@ -43,22 +43,28 @@ public class ForecastingEngine {
     }
 
     private static double applySeasonalAdjustment(double basePrediction) {
-        int currentMonth = Calendar.getInstance().get(Calendar.MONTH); // 0 = Ian, 5 = Iun
+        int currentMonth = Calendar.getInstance().get(Calendar.MONTH); // 0=Ian, 11=Dec
 
-        double multiplier = 1.0;
+        // Tabel de coeficienți lunari (Indexat 0-11)
+        // Valorile sub 1.0 scad predicția (iarna), peste 1.0 o cresc (vara)
+        double[] seasonalFactors = {
+                0.82, // Ianuarie (Minim)
+                0.85, // Februarie
+                0.95, // Martie (Începe primăvara)
+                1.00, // Aprilie
+                1.10, // Mai
+                1.30, // Iunie (Vârf de vară)
+                1.40, // Iulie (Vârf de vară)
+                1.35, // August
+                1.05, // Septembrie (Scădere - "September Drop")
+                0.95, // Octombrie
+                0.90, // Noiembrie
+                0.85  // Decembrie
+        };
 
-        // Sezon de vară (Iunie, Iulie, August) - Consumul crește (udat grădini)
-        if (currentMonth >= 5 && currentMonth <= 7) {
-            multiplier = 1.35; // +35%
-        }
-        // Sezon de iarnă (Decembrie, Ianuarie, Februarie) - Consum minim
-        else if (currentMonth == 11 || currentMonth <= 1) {
-            multiplier = 0.85; // -15%
-        }
-
+        double multiplier = seasonalFactors[currentMonth];
         double finalPrediction = basePrediction * multiplier;
 
-        // Nu permitem valori negative (fizic imposibil)
         return Math.max(0, finalPrediction);
     }
 }
