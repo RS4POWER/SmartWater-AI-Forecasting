@@ -1,0 +1,33 @@
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#00000000">
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#88000000" />
+
+    <View
+        android:id="@+id/scanWindow"
+        android:layout_width="280dp"
+        android:layout_height="80dp"
+        android:layout_centerInParent="true"
+        android:background="@android:color/transparent" />
+
+    <View
+        android:layout_width="280dp"
+        android:layout_height="80dp"
+        android:layout_centerInParent="true"
+        android:background="@drawable/border_red_frame" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/scanWindow"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="20dp"
+        android:text="ÎNCADREAZĂ DOAR CIFRELE"
+        android:textColor="@android:color/white"
+        android:textStyle="bold" />
+</RelativeLayout>

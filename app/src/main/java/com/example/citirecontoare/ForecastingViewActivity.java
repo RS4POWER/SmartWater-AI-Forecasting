@@ -34,51 +34,69 @@ public class ForecastingViewActivity extends AppCompatActivity {
     private void setupChart(List<Double> history) {
         List<Entry> entriesReal = new ArrayList<>();
         List<Entry> entriesRegression = new ArrayList<>();
+        List<Entry> entryPredictionPoint = new ArrayList<>(); // 🔥 Set nou pentru bulină
 
-        // 1. Punctele Reale (din Firebase)
+        // 1. Punctele Reale (Indexate de la 1)
         for (int i = 0; i < history.size(); i++) {
             entriesReal.add(new Entry(i + 1, history.get(i).floatValue()));
         }
 
-        // 2. Calculul liniei de trend (Regresia Liniară)
+        ForecastingEngine.RegressionModel model = ForecastingEngine.getLinearRegression(history);
         int n = history.size();
-        double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-        for (int i = 0; i < n; i++) {
-            double x = i + 1;
-            double y = history.get(i);
-            sumX += x; sumY += y; sumXY += x * y; sumX2 += x * x;
-        }
-        double slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-        double intercept = (sumY - slope * sumX) / n;
 
-        // Desenăm trendul până la luna viitoare (n + 1)
-        for (int i = 0; i <= n; i++) {
-            float x = i + 1;
-            float y = (float) (slope * x + intercept);
-            entriesRegression.add(new Entry(x, y));
+        // 2. Linia de Trend (de la luna 1 până la n + 1)
+        for (int i = 1; i <= n + 1; i++) {
+            entriesRegression.add(new Entry(i, (float) model.predict(i)));
         }
 
-        // 3. Setări vizuale pentru Punctele Reale (Albastru)
-        LineDataSet dataSetReal = new LineDataSet(entriesReal, "Consum Real (m³)");
+        // 3. Punctul de Predicție (Bulina „Wow”)
+        float predX = n + 1;
+        double rawPrediction = model.predict(predX);
+
+        // 🔥 APLICĂM SEZONALITATEA ȘI PE GRAFIC
+        float predY = (float) ForecastingEngine.applySeasonalAdjustment(rawPrediction);
+
+        entryPredictionPoint.add(new Entry(predX, predY));
+        // --- CONFIGURARE VIZUALĂ ---
+
+        // Set Real (Albastru)
+        LineDataSet dataSetReal = new LineDataSet(entriesReal, "Consum Real");
         dataSetReal.setColor(Color.BLUE);
         dataSetReal.setCircleColor(Color.BLUE);
-        dataSetReal.setLineWidth(0f); // Nu unim punctele reale, lăsăm doar punctele
-        dataSetReal.setCircleRadius(6f);
-        dataSetReal.setDrawCircleHole(false);
+        dataSetReal.setLineWidth(0f);
+        dataSetReal.setCircleRadius(6f); // Folosește dp pentru scalare corectă
 
-        // 4. Setări vizuale pentru Trendul AI (Roșu)
-        LineDataSet dataSetReg = new LineDataSet(entriesRegression, "Trend Predicitiv AI");
+        // Set Trend (Roșu întrerupt)
+        LineDataSet dataSetReg = new LineDataSet(entriesRegression, "Trend AI");
         dataSetReg.setColor(Color.RED);
-        dataSetReg.setLineWidth(3f);
+        dataSetReg.enableDashedLine(10f, 10f, 0f);
         dataSetReg.setDrawCircles(false);
-        dataSetReg.enableDashedLine(10f, 10f, 0f); // Linie întreruptă
 
-        // 5. Aplicare date pe grafic
-        LineData lineData = new LineData(dataSetReal, dataSetReg);
+        // 🔥 Set Bulină Predicție (Galben/Auriu)
+        LineDataSet dataSetPred = new LineDataSet(entryPredictionPoint, "Predicție Luna Viitoare");
+        dataSetPred.setCircleColor(Color.parseColor("#FFD700")); // Gold
+        dataSetPred.setColor(Color.parseColor("#FFD700"));
+        dataSetPred.setCircleRadius(8f);
+        dataSetPred.setDrawCircleHole(true);
+        dataSetPred.setCircleHoleRadius(4f);
+        dataSetPred.setLineWidth(0f); // Fără linie, doar punctul
+
+        dataSetPred.setValueTextColor(Color.BLACK);
+        dataSetPred.setValueTextSize(10f);
+// Afișăm valoarea exactă deasupra bulinei
+        dataSetPred.setValueFormatter(new com.github.mikephil.charting.formatter.DefaultValueFormatter(1));
+
+        // Aplicare pe grafic
+        LineData lineData = new LineData(dataSetReal, dataSetReg, dataSetPred);
         lineChart.setData(lineData);
+        XAxis xAxis = lineChart.getXAxis();
+        xAxis.setPosition(XAxis.XAxisPosition.BOTTOM);
+        xAxis.setGranularity(1f); // Doar numere întregi (Luna 1, 2, 3...)
+        xAxis.setLabelCount(history.size() + 1); // Câte label-uri să apară
         lineChart.getXAxis().setPosition(XAxis.XAxisPosition.BOTTOM);
         lineChart.getDescription().setText("Evoluție Consum per Lună");
         lineChart.animateX(1000); // Animație faină de un secundă
         lineChart.invalidate();
     }
+
 }

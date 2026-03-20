@@ -7,7 +7,6 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.os.Bundle;
-import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -53,6 +52,9 @@ public class MeterReadingActivity extends AppCompatActivity {
     private Button btnVerifyAI;
     private boolean isAIVerifiedOnce = false;
 
+    private androidx.camera.core.ImageCapture imageCapture;
+    private androidx.camera.core.Camera camera;
+
     private ArrayList<Double> lastFetchedHistory = new ArrayList<>();
     public String[] monthNames = {"Ianuarie", "Februarie", "Martie", "Aprilie", "Mai", "Iunie",
             "Iulie", "August", "Septembrie", "Octombrie", "Noiembrie", "Decembrie"};
@@ -64,12 +66,25 @@ public class MeterReadingActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_meter_reading);
 
-        // UI Initialization
+        initializeUI();
+
+        currentYear = Calendar.getInstance().get(Calendar.YEAR);
+        currentMonth = Calendar.getInstance().get(Calendar.MONTH);
+
+        handleIntentData();
+        updateDateDisplay();
+        loadHouseDetails(houseNumber, zoneName);
+        loadApometruDetails(houseNumber, currentYear, currentMonth);
+        toggleEditMode(false);
+
+        fetchHistoryAndRunAI();
+    }
+
+    private void initializeUI() {
         ownerNameTextView = findViewById(R.id.ownerNameTextView);
         houseNumberTextView = findViewById(R.id.houseNumberTextView);
         currentDateTextView = findViewById(R.id.currentDateTextView);
         anomalyWarningTextView = findViewById(R.id.anomalyWarningTextView);
-
         brandEditText = findViewById(R.id.brandEditText);
         serialEditText = findViewById(R.id.serialEditText);
         diameterEditText = findViewById(R.id.diameterEditText);
@@ -77,86 +92,20 @@ public class MeterReadingActivity extends AppCompatActivity {
         meterIndexEditText = findViewById(R.id.meterIndexEditText);
         consumptionEditText = findViewById(R.id.consumptionEditText);
         readingDateEditText = findViewById(R.id.readingDateEditText);
-
         backButton = findViewById(R.id.backButton);
         previousYearButton = findViewById(R.id.previousYearButton);
         nextYearButton = findViewById(R.id.nextYearButton);
         previousMonthButton = findViewById(R.id.prevMonthButton);
         nextMonthButton = findViewById(R.id.nextMonthButton);
-
         editModeButton = findViewById(R.id.editModeButton);
         cameraOcrButton = findViewById(R.id.cameraOcrButton);
         runAnalyticsButton = findViewById(R.id.runAnalyticsButton);
-
         textPrediction = findViewById(R.id.textPrediction);
         textAIStatus = findViewById(R.id.textAIStatus);
-
-        currentYear = Calendar.getInstance().get(Calendar.YEAR);
-        currentMonth = Calendar.getInstance().get(Calendar.MONTH);
-
         aiDividerView = findViewById(R.id.aiDividerView);
         btnVerifyAI = findViewById(R.id.btnVerifyAI);
 
-        handleIntentData();
-        updateDateDisplay();
         setupClickListeners();
-
-        loadHouseDetails(houseNumber, zoneName);
-        loadApometruDetails(houseNumber, currentYear, currentMonth);
-        toggleEditMode(false);
-
-        findViewById(R.id.btnShowChart).setOnClickListener(v -> {
-            if (lastFetchedHistory.isEmpty()) {
-                Toast.makeText(this, "Nu avem destule date pentru grafic!", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            Intent intent = new Intent(this, ForecastingViewActivity.class);
-            intent.putExtra("HISTORY_DATA", lastFetchedHistory);
-            startActivity(intent);
-        });
-
-        fetchHistoryAndRunAI();
-
-        btnVerifyAI = findViewById(R.id.btnVerifyAI);
-
-        btnVerifyAI.setOnClickListener(v -> {
-            if (!isAIVerifiedOnce) {
-                // Pasul 1: Double Check
-                btnVerifyAI.setText("EȘTI SIGUR?");
-                btnVerifyAI.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.RED));
-                isAIVerifiedOnce = true;
-            } else {
-                // Pasul 2: Salvare finală
-                saveAIFeedback("confirmat_normal");
-                btnVerifyAI.setText("CONFIRMAT ✅");
-                btnVerifyAI.setEnabled(false); // Îl dezactivăm să nu mai poată apăsa
-                btnVerifyAI.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.GRAY));
-
-                // Re-colorăm totul în verde pentru că muncitorul a zis că e OK
-                updateAIUI("✔ VALIDAT DE OPERATOR", android.graphics.Color.parseColor("#2E7D32"), "#F8FBFF");
-            }
-        });
-    }
-
-    private void saveAIFeedback(String status) {
-        getMonthRef(houseNumber, currentYear, currentMonth)
-                .update("ai_feedback", status)
-                .addOnSuccessListener(aVoid -> {
-                    Toast.makeText(this, "AI a învățat acest consum pentru viitor!", Toast.LENGTH_SHORT).show();
-                })
-                .addOnFailureListener(e -> Log.e(TAG, "Eroare feedback AI: " + e.getMessage()));
-    }
-
-
-    private void handleIntentData() {
-        Intent intent = getIntent();
-        houseNumber = intent.getLongExtra("HOUSE_NUMBER", -1);
-        zoneName = intent.getStringExtra("ZONE_NAME");
-        if (houseNumber == -1 || zoneName == null) {
-            Toast.makeText(this, "Error loading house data!", Toast.LENGTH_SHORT).show();
-            finish();
-        }
-        houseNumberTextView.setText("NR " + houseNumber);
     }
 
     private void setupClickListeners() {
@@ -166,12 +115,9 @@ public class MeterReadingActivity extends AppCompatActivity {
 
         readingDateEditText.setOnClickListener(v -> {
             final Calendar c = Calendar.getInstance();
-            android.app.DatePickerDialog datePickerDialog = new android.app.DatePickerDialog(this,
-                    (view, year1, monthOfYear, dayOfMonth) -> {
-                        String selectedDate = String.format("%02d-%02d-%d", dayOfMonth, (monthOfYear + 1), year1);
-                        readingDateEditText.setText(selectedDate);
-                    }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH));
-            datePickerDialog.show();
+            new android.app.DatePickerDialog(this, (view, year1, monthOfYear, dayOfMonth) -> {
+                readingDateEditText.setText(String.format("%02d-%02d-%d", dayOfMonth, (monthOfYear + 1), year1));
+            }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show();
         });
 
         previousMonthButton.setOnClickListener(v -> {
@@ -187,23 +133,58 @@ public class MeterReadingActivity extends AppCompatActivity {
         });
 
         editModeButton.setOnClickListener(v -> {
+
             isInEditMode = !isInEditMode;
-            editModeButton.setBackgroundResource(isInEditMode ? R.drawable.baseline_done_outline_24 : R.drawable.baseline_edit_note_24);
+
+            editModeButton.setBackgroundResource(
+                    isInEditMode ? R.drawable.baseline_done_outline_24 : R.drawable.baseline_edit_note_24
+            );
+
             if (!isInEditMode) {
                 saveHouseDetails();
                 saveApometruDetails();
             }
+
             toggleEditMode(isInEditMode);
-            String currentConsum = consumptionEditText.getText().toString();
-            if (!currentConsum.isEmpty() && !currentConsum.equals("0")) {
-                compareActualWithAI(Double.parseDouble(currentConsum));
+
+            // 🔥 DOAR O SINGURĂ DATĂ, SAFE
+            String currentConsumStr = consumptionEditText.getText().toString().trim();
+            if (!currentConsumStr.isEmpty() && !currentConsumStr.equals("0")) {
+                try {
+                    double consum = Double.parseDouble(currentConsumStr);
+                    compareActualWithAI(consum);
+                } catch (NumberFormatException e) {
+                    Log.e(TAG, "Format consum invalid: " + currentConsumStr);
+                }
             }
         });
 
         cameraOcrButton.setOnClickListener(v -> requestCameraPermission());
         runAnalyticsButton.setOnClickListener(v -> calculateAndSaveConsum());
 
+        findViewById(R.id.btnShowChart).setOnClickListener(v -> {
+            if (lastFetchedHistory.isEmpty()) {
+                Toast.makeText(this, "Nu avem destule date pentru grafic!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Intent intent = new Intent(this, ForecastingViewActivity.class);
+            intent.putExtra("HISTORY_DATA", lastFetchedHistory);
+            startActivity(intent);
+        });
 
+        btnVerifyAI.setOnClickListener(v -> {
+            if (!isAIVerifiedOnce) {
+                btnVerifyAI.setText("EȘTI SIGUR?");
+                btnVerifyAI.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.RED));
+                isAIVerifiedOnce = true;
+            } else {
+                saveAIFeedback("confirmat_normal");
+                btnVerifyAI.setText("CONFIRMAT ✅");
+                btnVerifyAI.setEnabled(false);
+                btnVerifyAI.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.GRAY));
+                updateAIUI("✔ VALIDAT DE OPERATOR", android.graphics.Color.parseColor("#2E7D32"), "#F8FBFF");
+            }
+        });
     }
 
     private void refresh() {
@@ -211,6 +192,26 @@ public class MeterReadingActivity extends AppCompatActivity {
         loadHouseDetails(houseNumber, zoneName);
         loadApometruDetails(houseNumber, currentYear, currentMonth);
         fetchHistoryAndRunAI();
+    }
+
+    private void saveAIFeedback(String status) {
+        getMonthRef(houseNumber, currentYear, currentMonth)
+                .update("ai_feedback", status)
+                .addOnSuccessListener(aVoid -> {
+                    Toast.makeText(this, "AI a învățat acest consum pentru viitor!", Toast.LENGTH_SHORT).show();
+                })
+                .addOnFailureListener(e -> Log.e(TAG, "Eroare feedback AI: " + e.getMessage()));
+    }
+
+    private void handleIntentData() {
+        Intent intent = getIntent();
+        houseNumber = intent.getLongExtra("HOUSE_NUMBER", -1);
+        zoneName = intent.getStringExtra("ZONE_NAME");
+        if (houseNumber == -1 || zoneName == null) {
+            Toast.makeText(this, "Error loading house data!", Toast.LENGTH_SHORT).show();
+            finish();
+        }
+        houseNumberTextView.setText("NR " + houseNumber);
     }
 
     private void updateDateDisplay() {
@@ -235,8 +236,6 @@ public class MeterReadingActivity extends AppCompatActivity {
         meterIndexEditText.setText("0");
         consumptionEditText.setText("0");
         readingDateEditText.setText("");
-
-        // RESETĂM AI-UL LA NEUTRU când intrăm pe o lună nouă
         resetAIUI();
 
         getMonthRef(houseNumber, year, month).get().addOnSuccessListener(doc -> {
@@ -247,7 +246,6 @@ public class MeterReadingActivity extends AppCompatActivity {
                 consumptionEditText.setText(consum != null ? String.valueOf(consum) : "0");
                 readingDateEditText.setText(doc.getString("Data citire"));
 
-                // DOAR dacă avem un consum real (peste 0), rulăm AI-ul
                 if (consum != null && consum > 0) {
                     compareActualWithAI((double) consum);
                 }
@@ -255,23 +253,17 @@ public class MeterReadingActivity extends AppCompatActivity {
         });
     }
 
-    // O metodă mică să curățăm cardul AI
     private void resetAIUI() {
-        // 1. Resetăm variabila de control pentru Double Check
         isAIVerifiedOnce = false;
-
-        // 2. Resetăm aspectul butonului de verificare
         btnVerifyAI.setEnabled(true);
         btnVerifyAI.setText("VALIDARE CONSUM");
-        btnVerifyAI.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4169E1"))); // Înapoi la RoyalBlue
-        btnVerifyAI.setVisibility(View.GONE); // Îl ascundem până când compareActualWithAI decide dacă e nevoie de el
+        btnVerifyAI.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4169E1")));
+        btnVerifyAI.setVisibility(View.GONE);
 
-        // 3. Resetăm restul textelor
         textAIStatus.setText("Status: Se așteaptă date...");
         textAIStatus.setTextColor(android.graphics.Color.GRAY);
         aiDividerView.setBackgroundColor(android.graphics.Color.GRAY);
 
-        // 4. Resetăm câmpul de consum la designul neutru
         consumptionEditText.setAlpha(1.0f);
         consumptionEditText.setBackgroundResource(R.drawable.border);
         if (consumptionEditText.getBackground() != null) {
@@ -322,22 +314,16 @@ public class MeterReadingActivity extends AppCompatActivity {
             if (dateToSave.isEmpty())
                 dateToSave = new java.text.SimpleDateFormat("dd-MM-yyyy").format(new java.util.Date());
 
-            // REPARAȚIE: Inițializăm Map-ul corect dintr-o dată
             Map<String, Object> data = new HashMap<>();
             data.put("Starea Apometrului", indexValue);
             data.put("Consumatia mc", consumptionValue);
             data.put("Data citire", dateToSave);
-
-            // AICI legăm de restul sistemului: Salvăm timpul precis al citirii
             data.put("timestamp", com.google.firebase.Timestamp.now());
 
             getMonthRef(houseNumber, currentYear, currentMonth)
                     .set(data, com.google.firebase.firestore.SetOptions.merge())
                     .addOnSuccessListener(aVoid -> {
                         Toast.makeText(this, "Salvare reușită!", Toast.LENGTH_SHORT).show();
-
-                        // --- INTEGRARE CU PERFORMANCE TRACKING ---
-                        // Notificăm RouteTracker că am terminat de citit această casă
                         RouteTracker.updateLastHouse(this, "Numarul " + houseNumber);
                     })
                     .addOnFailureListener(e -> Log.e(TAG, "Eroare salvare: " + e.getMessage()));
@@ -350,34 +336,93 @@ public class MeterReadingActivity extends AppCompatActivity {
     private void requestCameraPermission() {
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.CAMERA}, 1);
-        } else { startCamera(); }
-    }
-
-    private void startCamera() {
-        Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-        startActivityForResult(intent, 1);
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == 1 && resultCode == RESULT_OK) {
-            Bitmap bp = (Bitmap) data.getExtras().get("data");
-            recognizeText(bp);
+        } else {
+            startCameraX();
         }
     }
 
+    private void startCameraX() {
+        setContentView(R.layout.activity_ocr_camera);
+
+        androidx.camera.lifecycle.ProcessCameraProvider.getInstance(this).addListener(() -> {
+            try {
+                androidx.camera.lifecycle.ProcessCameraProvider cameraProvider =
+                        androidx.camera.lifecycle.ProcessCameraProvider.getInstance(this).get();
+
+                androidx.camera.core.Preview preview = new androidx.camera.core.Preview.Builder().build();
+                preview.setSurfaceProvider(((androidx.camera.view.PreviewView)findViewById(R.id.viewFinder)).getSurfaceProvider());
+
+                imageCapture = new androidx.camera.core.ImageCapture.Builder()
+                        .setCaptureMode(androidx.camera.core.ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                        .build();
+
+                androidx.camera.core.CameraSelector cameraSelector = androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA;
+
+                cameraProvider.unbindAll();
+                camera = cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture);
+
+                findViewById(R.id.btnFlashToggle).setOnClickListener(v -> toggleFlash());
+                findViewById(R.id.btnCapture).setOnClickListener(v -> takePhotoAndProcess());
+
+            } catch (Exception e) {
+                Log.e(TAG, "Eroare pornire CameraX: " + e.getMessage());
+            }
+        }, androidx.core.content.ContextCompat.getMainExecutor(this));
+    }
+
+    private void toggleFlash() {
+        if (camera != null && camera.getCameraInfo().hasFlashUnit()) {
+            boolean isFlashOn = camera.getCameraInfo().getTorchState().getValue() == androidx.camera.core.TorchState.ON;
+            camera.getCameraControl().enableTorch(!isFlashOn);
+        }
+    }
+
+    private void takePhotoAndProcess() {
+        if (imageCapture == null) return;
+
+        imageCapture.takePicture(androidx.core.content.ContextCompat.getMainExecutor(this),
+                new androidx.camera.core.ImageCapture.OnImageCapturedCallback() {
+                    @Override
+                    public void onCaptureSuccess(@NonNull androidx.camera.core.ImageProxy imageProxy) {
+                        Bitmap bitmap = imageProxyToBitmap(imageProxy);
+                        imageProxy.close();
+
+                        setContentView(R.layout.activity_meter_reading);
+                        initializeUI();
+
+                        handleIntentData();
+                        updateDateDisplay();
+                        loadHouseDetails(houseNumber, zoneName);
+                        loadApometruDetails(houseNumber, currentYear, currentMonth);
+                        fetchHistoryAndRunAI();
+
+                        recognizeText(bitmap);
+                    }
+                });
+    }
+
+    private Bitmap imageProxyToBitmap(androidx.camera.core.ImageProxy image) {
+        androidx.camera.core.ImageProxy.PlaneProxy plane = image.getPlanes()[0];
+        java.nio.ByteBuffer buffer = plane.getBuffer();
+        byte[] bytes = new byte[buffer.remaining()];
+        buffer.get(bytes);
+        return android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+    }
+
     private void recognizeText(Bitmap bitmap) {
-        InputImage image = InputImage.fromBitmap(bitmap, 0);
+        Bitmap processed = preProcessBitmap(bitmap);
+        InputImage image = InputImage.fromBitmap(processed, 0);
         TextRecognizer recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+
         recognizer.process(image).addOnSuccessListener(result -> {
             for (Text.TextBlock block : result.getTextBlocks()) {
-                if (block.getText().matches("\\d+")) {
-                    meterIndexEditText.setText(block.getText());
+                String cleanText = block.getText().replaceAll("[^0-9]", "");
+                if (cleanText.length() >= 4) {
+                    meterIndexEditText.setText(cleanText);
                     break;
                 }
             }
-        });
+        }).addOnFailureListener(e -> Log.e(TAG, "ML Kit Error: " + e.getMessage()));
     }
 
     private void calculateAndSaveConsum() {
@@ -423,64 +468,56 @@ public class MeterReadingActivity extends AppCompatActivity {
     }
 
     private void compareActualWithAI(double consumIntrodus) {
-        if (aiPredictedValue <= 0) return;
+        if (aiPredictedValue <= 0 || Double.isNaN(aiPredictedValue)) return;
 
         double diferentaAbsoluta = Math.abs(consumIntrodus - aiPredictedValue);
-        double deviatieProcentuala = (diferentaAbsoluta / aiPredictedValue) * 100;
+        double deviatieProcentuala = aiPredictedValue > 0.1
+                ? (diferentaAbsoluta / aiPredictedValue) * 100
+                : 0;
 
-        // Resetăm culorile la default
         int colorVerde = android.graphics.Color.parseColor("#2E7D32");
         int colorGalben = android.graphics.Color.parseColor("#FFC107");
         int colorRosu = android.graphics.Color.RED;
 
         if (deviatieProcentuala < 20 || diferentaAbsoluta < 3) {
-            // VERDE - Totul e ok
             updateAIUI("✔ NORMAL", colorVerde, "#F8FBFF");
+            btnVerifyAI.setVisibility(View.GONE);
+
         } else if (deviatieProcentuala >= 20 && deviatieProcentuala <= 50) {
-            // GALBEN - Ceva e suspect
             updateAIUI("⚠ ATIPIC (+" + (int)deviatieProcentuala + "%)", colorGalben, "#FFFDE7");
+            btnVerifyAI.setVisibility(View.VISIBLE);
+
         } else {
-            // ROȘU - Probabil avarie
             updateAIUI("🚨 ANOMALIE (+" + (int)deviatieProcentuala + "%)", colorRosu, "#FFF1F1");
+            btnVerifyAI.setVisibility(View.VISIBLE);
         }
     }
+
     private void updateAIUI(String status, int mainColor, String bgColor) {
         textAIStatus.setText(status);
         textAIStatus.setTextColor(mainColor);
         aiDividerView.setBackgroundColor(mainColor);
         findViewById(R.id.cardAI).setBackgroundColor(android.graphics.Color.parseColor(bgColor));
 
-        // Creăm un GradientDrawable NOU de la zero pentru fundal
         android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
         gd.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
 
-        // NOTE: Aici pune corner radius-ul pe care l-ai avut în drawable/border
-        // Am presupun că e 15dp ca în alte elemente, dar ajustează dacă e nevoie.
         float cornerRadiusInDp = 15f;
         float density = getResources().getDisplayMetrics().density;
         gd.setCornerRadius(cornerRadiusInDp * density);
 
-        // LOGICA DESIGN: Viu sau Spălăcit (Faded)
         int colorWithAlpha;
         if (!isInEditMode) {
-            // Non-Edit Mode: Fundal și Text mai transparente (spălăcite)
-            colorWithAlpha = (android.graphics.Color.parseColor(bgColor) & 0x00FFFFFF) | 0x44000000; // 44 în hex e aprox 25% opacitate
-            consumptionEditText.setAlpha(0.6f); // Textul devine și el un pic transparent
+            colorWithAlpha = (android.graphics.Color.parseColor(bgColor) & 0x00FFFFFF) | 0x44000000;
+            consumptionEditText.setAlpha(0.6f);
         } else {
-            // Edit Mode: Fundal și Text în culori pline, vii
             colorWithAlpha = android.graphics.Color.parseColor(bgColor);
-            consumptionEditText.setAlpha(1.0f); // Text plin
+            consumptionEditText.setAlpha(1.0f);
         }
 
         gd.setColor(colorWithAlpha);
-
-        // Setăm CONTURUL RoyalBlue persistent
         gd.setStroke(3, android.graphics.Color.parseColor("#4169E1"));
-
-        // Aplicăm drawable-ul NOU pe câmp
         consumptionEditText.setBackground(gd);
-
-        // Setăm și culoarea textului în mod corespunzător
         consumptionEditText.setTextColor(mainColor);
     }
 
@@ -501,26 +538,67 @@ public class MeterReadingActivity extends AppCompatActivity {
             lastFetchedHistory.clear();
             for (Object res : results) {
                 DocumentSnapshot doc = (DocumentSnapshot) res;
-                if (doc.exists() && doc.contains("Consumatia mc")) {
-                    lastFetchedHistory.add(doc.getDouble("Consumatia mc"));
+                if (doc.exists() && doc.get("Consumatia mc") != null) {
+                    String feedback = doc.getString("ai_feedback");
+                    if ("avarie".equals(feedback)) {
+                        continue; // Ignorăm luna cu avarie
+                    }
+                    Number value = (Number) doc.get("Consumatia mc");
+                    if (value != null) lastFetchedHistory.add(value.doubleValue());
                 }
             }
 
             java.util.Collections.reverse(lastFetchedHistory);
 
+            // 🔥 LOGICA CURATĂ DE DECIZIE:
             if (lastFetchedHistory.size() >= 2) {
-                // 3. Calculăm predicția NOUĂ pentru luna curentă
+                // CAZUL 1: Avem destule date pentru Regresie
                 runAIForecast(lastFetchedHistory);
 
-                // 4. Abia ACUM facem comparația cu consumul de pe ecran
-                String currentConsumStr = consumptionEditText.getText().toString();
+                // Verificăm dacă avem deja ceva scris în EditText ca să comparăm live
+                String currentConsumStr = consumptionEditText.getText().toString().trim();
                 if (!currentConsumStr.isEmpty() && !currentConsumStr.equals("0")) {
-                    compareActualWithAI(Double.parseDouble(currentConsumStr));
+                    try {
+                        compareActualWithAI(Double.parseDouble(currentConsumStr));
+                    } catch (NumberFormatException e) {
+                        Log.e(TAG, "Eroare parsare: " + currentConsumStr);
+                    }
                 }
+            } else if (lastFetchedHistory.size() == 1) {
+                // CAZUL 2: Fallback (Avem doar o lună, AI-ul doar repetă valoarea)
+                runAIForecast(lastFetchedHistory);
+                textAIStatus.setText("Trend: Date puține, predicție bazată pe o singură lună.");
             } else {
+                // CAZUL 3: Zero date
                 textPrediction.setText("AI: Date insuficiente");
-                textAIStatus.setText("Sunt necesare minim 2 luni de istoric.");
+                textAIStatus.setText("Nu există istoric (sau tot istoricul e marcat 'avarie').");
             }
         });
+    }
+
+    private Bitmap preProcessBitmap(Bitmap source) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        Bitmap bitmap = Bitmap.createBitmap(width, height, source.getConfig());
+
+        android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+        android.graphics.Paint paint = new android.graphics.Paint();
+
+        android.graphics.ColorMatrix cm = new android.graphics.ColorMatrix();
+        cm.setSaturation(0);
+
+        float contrast = 1.5f;
+        float brightness = -20f;
+        cm.postConcat(new android.graphics.ColorMatrix(new float[] {
+                contrast, 0, 0, 0, brightness,
+                0, contrast, 0, 0, brightness,
+                0, 0, contrast, 0, brightness,
+                0, 0, 0, 1, 0
+        }));
+
+        paint.setColorFilter(new android.graphics.ColorMatrixColorFilter(cm));
+        canvas.drawBitmap(source, 0, 0, paint);
+
+        return bitmap;
     }
 }

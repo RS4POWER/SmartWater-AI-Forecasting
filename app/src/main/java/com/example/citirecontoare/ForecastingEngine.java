@@ -7,42 +7,72 @@ public class ForecastingEngine {
 
     /**
      * Predicție bazată pe Regresie Liniară Simplă (y = ax + b)
-     * @param historyList Lista cu consumurile lunare anterioare
+     * historylist Lista cu consumurile lunare anterioare
      * @return Valoarea prezisă pentru luna următoare
      */
-    public static double predictNextConsumption(List<Double> historyList) {
-        if (historyList == null || historyList.size() < 2) {
-            // Dacă avem prea puține date (sub 2 luni), nu putem face regresie
-            // Returnăm ultima valoare sau o medie sigură
-            return (historyList != null && !historyList.isEmpty()) ? historyList.get(historyList.size() - 1) : 0.0;
+    // 1. Obiect care ține rezultatul matematic
+    public static class RegressionModel {
+        public double slope;
+        public double intercept;
+
+        public RegressionModel(double slope, double intercept) {
+            this.slope = slope;
+            this.intercept = intercept;
         }
 
-        int n = historyList.size();
+        public double predict(double x) {
+            return slope * x + intercept;
+        }
+    }
+
+    // 2. Metoda centralizată de calcul (O scriem o singură dată!)
+    public static RegressionModel getLinearRegression(List<Double> history) {
+        int n = history.size();
         double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
 
-        // X reprezintă timpul (luna 1, 2, 3...)
-        // Y reprezintă consumul (mc)
         for (int i = 0; i < n; i++) {
-            double x = i + 1;
-            double y = historyList.get(i);
+            double x = i + 1; // 🔥 Prima lună este 1, nu 0
+            double y = history.get(i);
             sumX += x;
             sumY += y;
             sumXY += x * y;
             sumX2 += x * x;
         }
 
-        // Formula pentru pantă (a) și intersecție (b)
-        double slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+        double denominator = (n * sumX2 - sumX * sumX);
+        if (denominator == 0) return new RegressionModel(0, history.get(n - 1));
+
+        double slope = (n * sumXY - sumX * sumY) / denominator;
         double intercept = (sumY - slope * sumX) / n;
 
-        // Predicția brută pentru luna următoare (n + 1)
-        double prediction = slope * (n + 1) + intercept;
+        return new RegressionModel(slope, intercept);
+    }
 
-        // Aplicăm AJUSTAREA SEZONIERĂ (Factor de inteligență)
+    // 3. Metoda de predicție devine acum foarte scurtă
+    public static double predictNextConsumption(List<Double> historyList) {
+        if (historyList == null || historyList.isEmpty()) return 0.0;
+
+        // 🔥 FALLBACK: Dacă avem doar o lună (după filtrarea avariilor),
+        // predicția este egală cu acea lună.
+        if (historyList.size() < 2) {
+            return applySeasonalAdjustment(historyList.get(0));
+        }
+
+        RegressionModel model = getLinearRegression(historyList);
+        double prediction = model.predict(historyList.size() + 1);
+
+        // 🔥 LIMITARE INTELIGENTĂ (Anti-Spike)
+        // Nu lăsăm predicția să sară de 2x față de ultima lună reală
+        double lastValue = historyList.get(historyList.size() - 1);
+        double maxAllowed = lastValue * 2.0;
+
+        prediction = Math.max(0, prediction); // Nu poate fi negativ
+        prediction = Math.min(prediction, maxAllowed); // Nu poate fi absurd de mare
+
         return applySeasonalAdjustment(prediction);
     }
 
-    private static double applySeasonalAdjustment(double basePrediction) {
+    public static double applySeasonalAdjustment(double basePrediction) {
         int currentMonth = Calendar.getInstance().get(Calendar.MONTH); // 0=Ian, 11=Dec
 
         // Tabel de coeficienți lunari (Indexat 0-11)
