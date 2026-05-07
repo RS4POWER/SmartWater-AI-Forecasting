@@ -61,6 +61,8 @@ public class MeterReadingActivity extends AppCompatActivity {
 
     private static final String TAG = "MeterReadingActivity";
 
+    private String currentReadingSource = "manual"; // Default este manual
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -184,8 +186,12 @@ public class MeterReadingActivity extends AppCompatActivity {
                 btnVerifyAI.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.GRAY));
                 updateAIUI("✔ VALIDAT DE OPERATOR", android.graphics.Color.parseColor("#2E7D32"), "#F8FBFF");
             }
+
         });
     }
+
+    // Pune codul ăsta undeva să-l rulezi o dată:
+
 
     private void refresh() {
         updateDateDisplay();
@@ -303,33 +309,77 @@ public class MeterReadingActivity extends AppCompatActivity {
                 .document("Numarul " + houseNumber)
                 .set(data, com.google.firebase.firestore.SetOptions.merge())
                 .addOnSuccessListener(aVoid -> Toast.makeText(this, "Specificații salvate!", Toast.LENGTH_SHORT).show());
+
+
     }
 
     private void saveApometruDetails() {
         try {
-            long indexValue = Long.parseLong(meterIndexEditText.getText().toString().trim());
-            long consumptionValue = Long.parseLong(consumptionEditText.getText().toString().trim());
+            // Preluăm valorile proaspete din UI
+            String indexStr = meterIndexEditText.getText().toString().trim();
+            String consumStr = consumptionEditText.getText().toString().trim();
+
+            if (indexStr.isEmpty() || consumStr.isEmpty()) {
+                Toast.makeText(this, "Completează datele înainte de salvare!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            double indexValue = Double.parseDouble(indexStr);
+            double actualConsumption = Double.parseDouble(consumStr);
             String dateToSave = readingDateEditText.getText().toString().trim();
 
             if (dateToSave.isEmpty())
                 dateToSave = new java.text.SimpleDateFormat("dd-MM-yyyy").format(new java.util.Date());
 
+            // --- CONSTRUCȚIA DOCUMENTULUI ---
             Map<String, Object> data = new HashMap<>();
+            data.put("schema_version", 2); // 🔥 Versiunea 2 (Master Level)
             data.put("Starea Apometrului", indexValue);
-            data.put("Consumatia mc", consumptionValue);
+            data.put("Consumatia mc", actualConsumption);
             data.put("Data citire", dateToSave);
             data.put("timestamp", com.google.firebase.Timestamp.now());
+            data.put("reading_source", currentReadingSource);
 
+            // METRICI AI
+            double aiPrediction = aiPredictedValue;
+            double errorAbs = Math.abs(actualConsumption - aiPrediction);
+            double errorPercent = (aiPrediction > 0.1) ? (errorAbs / aiPrediction) * 100 : 0;
+
+            data.put("ai_prediction", aiPrediction);
+            data.put("ai_error_abs", errorAbs);
+            data.put("ai_error_percent", errorPercent);
+            data.put("ai_status", (errorPercent > 20) ? "anomalie" : "normal");
+
+            // METRICI OPERATOR
+            if (RouteTracker.isTracking(this)) {
+                long now = System.currentTimeMillis();
+                long last = RouteTracker.getLastTimestamp(this);
+                long routeStart = RouteTracker.getStartTime(this);
+                if (last == 0) last = routeStart;
+
+                long deltaSec = (now - last) / 1000;
+                data.put("time_since_last_house_sec", deltaSec);
+                data.put("route_elapsed_sec", (now - routeStart) / 1000);
+                data.put("timing_valid", deltaSec < 600); // Sub 10 min e valid
+                data.put("is_pro_reading", true);
+
+                RouteTracker.saveLastTimestamp(this, now);
+            } else {
+                data.put("is_pro_reading", false);
+            }
+
+            // --- SINGURA SCRIERE ÎN FIRESTORE ---
             getMonthRef(houseNumber, currentYear, currentMonth)
                     .set(data, com.google.firebase.firestore.SetOptions.merge())
                     .addOnSuccessListener(aVoid -> {
-                        Toast.makeText(this, "Salvare reușită!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Salvare reușită (v2)!", Toast.LENGTH_SHORT).show();
                         RouteTracker.updateLastHouse(this, "Numarul " + houseNumber);
+                        currentReadingSource = "manual"; // Reset
                     })
-                    .addOnFailureListener(e -> Log.e(TAG, "Eroare salvare: " + e.getMessage()));
+                    .addOnFailureListener(e -> Log.e(TAG, "Eroare Firestore: " + e.getMessage()));
 
         } catch (Exception e) {
-            Toast.makeText(this, "Eroare la date! Verifică cifrele.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Eroare la procesarea cifrelor!", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -423,6 +473,17 @@ public class MeterReadingActivity extends AppCompatActivity {
                 }
             }
         }).addOnFailureListener(e -> Log.e(TAG, "ML Kit Error: " + e.getMessage()));
+
+        recognizer.process(image).addOnSuccessListener(result -> {
+            for (Text.TextBlock block : result.getTextBlocks()) {
+                String cleanText = block.getText().replaceAll("[^0-9]", "");
+                if (cleanText.length() >= 4) {
+                    meterIndexEditText.setText(cleanText);
+                    currentReadingSource = "ocr"; // 🔥 S-a folosit camera!
+                    break;
+                }
+            }
+        });
     }
 
     private void calculateAndSaveConsum() {
@@ -456,9 +517,14 @@ public class MeterReadingActivity extends AppCompatActivity {
 
     private void finalizeConsumption(long current, long last) {
         long result = Math.max(0, current - last);
+
+        // 🔥 ACTUALIZARE: Doar punem valoarea în UI, NU salvăm în Firebase încă
         consumptionEditText.setText(String.valueOf(result));
-        getMonthRef(houseNumber, currentYear, currentMonth).update("Consumatia mc", result)
-                .addOnSuccessListener(aVoid -> compareActualWithAI((double) result));
+
+        // Declanșăm compararea cu AI-ul pentru ca operatorul să vadă statusul (Normal/Anomalie)
+        compareActualWithAI((double) result);
+
+        Toast.makeText(this, "Consum calculat. Verifică și salvează!", Toast.LENGTH_SHORT).show();
     }
 
     private void runAIForecast(List<Double> consumHistory) {

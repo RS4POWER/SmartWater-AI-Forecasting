@@ -49,4 +49,16 @@ public class RouteTracker {
         return context.getSharedPreferences("RoutePrefs", Context.MODE_PRIVATE)
                 .getString("lastHouse", "N/A");
     }
+
+    public static void saveLastTimestamp(Context context, long time) {
+        context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putLong("lastTimestamp", time)
+                .apply();
+    }
+
+    public static long getLastTimestamp(Context context) {
+        return context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+                .getLong("lastTimestamp", 0);
+    }
 }

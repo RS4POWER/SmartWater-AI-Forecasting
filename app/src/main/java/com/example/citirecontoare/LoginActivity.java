@@ -41,6 +41,8 @@ public class LoginActivity extends AppCompatActivity {
                 String email = loginUsername.getText().toString().trim();
                 String password = loginPassword.getText().toString().trim();
 
+
+
                 if (email.isEmpty() && password.isEmpty())  {
                     Toast.makeText(LoginActivity.this, "Va rog completati adresa de email si parola.", Toast.LENGTH_SHORT).show();
                     return;
@@ -82,7 +84,16 @@ public class LoginActivity extends AppCompatActivity {
                                     }
                                 } else {
                                     // Logica de eroare rămâne la fel...
-                                    Toast.makeText(LoginActivity.this, "Autentificare eșuată.", Toast.LENGTH_SHORT).show();
+                                    // 🔥 MODIFICĂ AICI - Baza de date a erorii:
+                                    String errorMessage = "Eroare necunoscută";
+                                    if (task.getException() != null) {
+                                        errorMessage = task.getException().getMessage();
+                                        // Afișăm eroarea exactă în Logcat cu roșu
+                                        android.util.Log.e("AUTH_DEBUG", "De ce nu merge: " + errorMessage);
+                                    }
+
+                                    Toast.makeText(LoginActivity.this, "Autentificare eșuată: " + errorMessage,
+                                            Toast.LENGTH_LONG).show();
                                 }
                             }
                         });
