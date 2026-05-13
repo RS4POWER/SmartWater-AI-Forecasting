@@ -46,6 +46,10 @@ public class DashboardActivity extends AppCompatActivity {
         secondaryZoneButton = findViewById(R.id.zoneButton2);
         logoutButton = findViewById(R.id.LogOff);
 
+        primaryZoneButton.setAllCaps(false);
+        secondaryZoneButton.setAllCaps(false);
+        logoutButton.setAllCaps(false);
+
         logoutButton.setText("Log Off");
     }
 

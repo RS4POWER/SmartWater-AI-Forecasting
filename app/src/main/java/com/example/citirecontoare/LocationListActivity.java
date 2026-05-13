@@ -239,14 +239,14 @@ public class LocationListActivity extends AppCompatActivity {
     private void exportConsumptionData() {
         FirebaseFirestore db = FirebaseFirestore.getInstance();
 
-        // 1. Pregătire date timp/nume
+        // 1. Pregătire context (Luna și Anul pentru care facem exportul)
         String currentMonth = new MeterReadingActivity().monthNames[Calendar.getInstance().get(Calendar.MONTH)];
         String currentYear = String.valueOf(Calendar.getInstance().get(Calendar.YEAR));
 
         StringBuilder csvData = new StringBuilder();
-        csvData.append("Casa;Proprietar;SchemaV;Index;Consum;AI_Predictie;AI_Eroare_%;AI_Status;Sursa;Timp_Casa_Sec;Timp_Total_Sec;Timing_Valid\n");
+        // ⚠️ ANTET NOU: Am adăugat Data_Citire și Perioada
+        csvData.append("Casa;Proprietar;Data_Citire;Perioada;SchemaV;Index;Consum;AI_Predictie;AI_Eroare_%;AI_Status;Sursa;Timp_Casa_Sec;Timp_Total_Sec;Timing_Valid\n");
 
-        // 2. Luăm lista de case
         db.collection("zones").document(selectedZone)
                 .collection("numereCasa").get()
                 .addOnSuccessListener(houses -> {
@@ -257,7 +257,6 @@ public class LocationListActivity extends AppCompatActivity {
                                 .document(currentMonth).get());
                     }
 
-                    // 3. Așteptăm TOATE datele de consum
                     Tasks.whenAllComplete(tasks).addOnSuccessListener(results -> {
                         for (int i = 0; i < tasks.size(); i++) {
                             DocumentSnapshot consumption = (DocumentSnapshot) tasks.get(i).getResult();
@@ -265,6 +264,10 @@ public class LocationListActivity extends AppCompatActivity {
                             String owner = safeString(houses.getDocuments().get(i), "Proprietar");
 
                             if (consumption != null && consumption.exists()) {
+                                // 🕒 EXTRACȚIE TIMP
+                                String dataCitire = safeString(consumption, "Data citire"); // Ziua efectivă (ex: 07-05-2026)
+                                String perioada = currentMonth + " " + currentYear; // Contextul (ex: Mai 2026)
+
                                 long schema = safeLong(consumption, "schema_version");
                                 double index = safeDouble(consumption, "Starea Apometrului");
                                 double consum = safeDouble(consumption, "Consumatia mc");
@@ -276,23 +279,19 @@ public class LocationListActivity extends AppCompatActivity {
                                 long tTotal = safeLong(consumption, "route_elapsed_sec");
                                 boolean valid = safeBoolean(consumption, "timing_valid");
 
-                                csvData.append(String.format(Locale.US, "%s;%s;%d;%.2f;%.2f;%.2f;%.2f%%;%s;%s;%d;%d;%b\n",
-                                        houseId, owner, schema, index, consum, aiPred, aiErr, aiStat, source, tCasa, tTotal, valid));
+                                // ✍️ SCRIERE RÂND (Atenție la ordine: am adăugat %s;%s pentru dată și perioadă)
+                                csvData.append(String.format(Locale.US, "%s;%s;%s;%s;%d;%.2f;%.2f;%.2f;%.2f%%;%s;%s;%d;%d;%b\n",
+                                        houseId, owner, dataCitire, perioada, schema, index, consum, aiPred, aiErr, aiStat, source, tCasa, tTotal, valid));
                             }
                         }
 
-                        // 🔥 AICI E MAGIA: Datele sunt gata, acum întrebăm userul ce vrea să facă
                         this.csvDataPendingSave = csvData.toString();
 
                         new android.app.AlertDialog.Builder(this)
                                 .setTitle("Export Raport - " + selectedZone)
                                 .setMessage("Datele au fost colectate. Cum dorești să le salvezi?")
-                                .setPositiveButton("Trimite (Share)", (dialog, which) -> {
-                                    shareCSV(this.csvDataPendingSave);
-                                })
-                                .setNegativeButton("Salvează local", (dialog, which) -> {
-                                    triggerSaveAs(selectedZone);
-                                })
+                                .setPositiveButton("Trimite (Share)", (dialog, which) -> shareCSV(this.csvDataPendingSave))
+                                .setNegativeButton("Salvează local", (dialog, which) -> triggerSaveAs(selectedZone))
                                 .setNeutralButton("Anulează", null)
                                 .show();
                     });

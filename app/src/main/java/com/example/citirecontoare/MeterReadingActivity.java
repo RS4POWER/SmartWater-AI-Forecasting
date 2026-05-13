@@ -164,6 +164,7 @@ public class MeterReadingActivity extends AppCompatActivity {
         cameraOcrButton.setOnClickListener(v -> requestCameraPermission());
         runAnalyticsButton.setOnClickListener(v -> calculateAndSaveConsum());
 
+
         findViewById(R.id.btnShowChart).setOnClickListener(v -> {
             if (lastFetchedHistory.isEmpty()) {
                 Toast.makeText(this, "Nu avem destule date pentru grafic!", Toast.LENGTH_SHORT).show();
@@ -198,6 +199,7 @@ public class MeterReadingActivity extends AppCompatActivity {
         loadHouseDetails(houseNumber, zoneName);
         loadApometruDetails(houseNumber, currentYear, currentMonth);
         fetchHistoryAndRunAI();
+        currentReadingSource = "manual";
     }
 
     private void saveAIFeedback(String status) {
@@ -246,16 +248,24 @@ public class MeterReadingActivity extends AppCompatActivity {
 
         getMonthRef(houseNumber, year, month).get().addOnSuccessListener(doc -> {
             if (doc.exists()) {
-                Long index = doc.getLong("Starea Apometrului");
-                meterIndexEditText.setText(index != null ? String.valueOf(index) : "0");
-                Long consum = doc.getLong("Consumatia mc");
-                consumptionEditText.setText(consum != null ? String.valueOf(consum) : "0");
+
+                Object indexObj = doc.get("Starea Apometrului");
+                Number index = indexObj instanceof Number ? (Number) indexObj : null;
+                meterIndexEditText.setText(index != null ? String.valueOf(index.longValue()) : "0");
+
+                Object consumObj = doc.get("Consumatia mc");
+                Number consum = consumObj instanceof Number ? (Number) consumObj : null;
+                consumptionEditText.setText(consum != null ? String.valueOf(consum.longValue()) : "0");
+
                 readingDateEditText.setText(doc.getString("Data citire"));
 
-                if (consum != null && consum > 0) {
-                    compareActualWithAI((double) consum);
+                if (consum != null && consum.doubleValue() > 0) {
+                    compareActualWithAI(consum.doubleValue());
                 }
             }
+        }).addOnFailureListener(e -> {
+            Log.e(TAG, "Eroare încărcare detalii apometru", e);
+            Toast.makeText(this, "Eroare la încărcarea citirii!", Toast.LENGTH_SHORT).show();
         });
     }
 
@@ -269,6 +279,8 @@ public class MeterReadingActivity extends AppCompatActivity {
         textAIStatus.setText("Status: Se așteaptă date...");
         textAIStatus.setTextColor(android.graphics.Color.GRAY);
         aiDividerView.setBackgroundColor(android.graphics.Color.GRAY);
+
+        meterIndexEditText.setBackgroundResource(R.drawable.border);
 
         consumptionEditText.setAlpha(1.0f);
         consumptionEditText.setBackgroundResource(R.drawable.border);
@@ -312,7 +324,14 @@ public class MeterReadingActivity extends AppCompatActivity {
 
 
     }
+    private long parseLongFromUi(String value) throws NumberFormatException {
+        if (value == null) throw new NumberFormatException("null");
 
+        value = value.trim().replace(",", ".");
+
+        double parsed = Double.parseDouble(value);
+        return Math.round(parsed);
+    }
     private void saveApometruDetails() {
         try {
             // Preluăm valorile proaspete din UI
@@ -324,8 +343,8 @@ public class MeterReadingActivity extends AppCompatActivity {
                 return;
             }
 
-            double indexValue = Double.parseDouble(indexStr);
-            double actualConsumption = Double.parseDouble(consumStr);
+            long indexValue = parseLongFromUi(indexStr);
+            long actualConsumption = parseLongFromUi(consumStr);
             String dateToSave = readingDateEditText.getText().toString().trim();
 
             if (dateToSave.isEmpty())
@@ -375,6 +394,7 @@ public class MeterReadingActivity extends AppCompatActivity {
                         Toast.makeText(this, "Salvare reușită (v2)!", Toast.LENGTH_SHORT).show();
                         RouteTracker.updateLastHouse(this, "Numarul " + houseNumber);
                         currentReadingSource = "manual"; // Reset
+                        meterIndexEditText.setBackgroundResource(R.drawable.border);
                     })
                     .addOnFailureListener(e -> Log.e(TAG, "Eroare Firestore: " + e.getMessage()));
 
@@ -394,10 +414,13 @@ public class MeterReadingActivity extends AppCompatActivity {
     private void startCameraX() {
         setContentView(R.layout.activity_ocr_camera);
 
+
+
         androidx.camera.lifecycle.ProcessCameraProvider.getInstance(this).addListener(() -> {
             try {
                 androidx.camera.lifecycle.ProcessCameraProvider cameraProvider =
                         androidx.camera.lifecycle.ProcessCameraProvider.getInstance(this).get();
+
 
                 androidx.camera.core.Preview preview = new androidx.camera.core.Preview.Builder().build();
                 preview.setSurfaceProvider(((androidx.camera.view.PreviewView)findViewById(R.id.viewFinder)).getSurfaceProvider());
@@ -406,10 +429,14 @@ public class MeterReadingActivity extends AppCompatActivity {
                         .setCaptureMode(androidx.camera.core.ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                         .build();
 
-                androidx.camera.core.CameraSelector cameraSelector = androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA;
+
+                androidx.camera.core.CameraSelector cameraSelector =
+                        androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA;
 
                 cameraProvider.unbindAll();
+
                 camera = cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture);
+                camera.getCameraControl().setLinearZoom(0.35f);
 
                 findViewById(R.id.btnFlashToggle).setOnClickListener(v -> toggleFlash());
                 findViewById(R.id.btnCapture).setOnClickListener(v -> takePhotoAndProcess());
@@ -418,6 +445,18 @@ public class MeterReadingActivity extends AppCompatActivity {
                 Log.e(TAG, "Eroare pornire CameraX: " + e.getMessage());
             }
         }, androidx.core.content.ContextCompat.getMainExecutor(this));
+    }
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == 1) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                startCameraX();
+            } else {
+                Toast.makeText(this, "Permisiunea pentru cameră este necesară pentru OCR.", Toast.LENGTH_SHORT).show();
+            }
+        }
     }
 
     private void toggleFlash() {
@@ -437,16 +476,28 @@ public class MeterReadingActivity extends AppCompatActivity {
                         Bitmap bitmap = imageProxyToBitmap(imageProxy);
                         imageProxy.close();
 
+                        if (bitmap == null) {
+                            Toast.makeText(MeterReadingActivity.this, "Eroare la capturarea imaginii!", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+
+                        Bitmap croppedBitmap = cropToMeterWindow(bitmap);
+
                         setContentView(R.layout.activity_meter_reading);
                         initializeUI();
 
                         handleIntentData();
                         updateDateDisplay();
                         loadHouseDetails(houseNumber, zoneName);
-                        loadApometruDetails(houseNumber, currentYear, currentMonth);
+                        resetAIUI();
                         fetchHistoryAndRunAI();
 
-                        recognizeText(bitmap);
+                        recognizeText(croppedBitmap);
+                    }
+                    @Override
+                    public void onError(@NonNull androidx.camera.core.ImageCaptureException exception) {
+                        Log.e(TAG, "Eroare captură OCR", exception);
+                        Toast.makeText(MeterReadingActivity.this, "Eroare la capturarea imaginii!", Toast.LENGTH_SHORT).show();
                     }
                 });
     }
@@ -461,39 +512,69 @@ public class MeterReadingActivity extends AppCompatActivity {
 
     private void recognizeText(Bitmap bitmap) {
         Bitmap processed = preProcessBitmap(bitmap);
+
         InputImage image = InputImage.fromBitmap(processed, 0);
         TextRecognizer recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
 
         recognizer.process(image).addOnSuccessListener(result -> {
-            for (Text.TextBlock block : result.getTextBlocks()) {
-                String cleanText = block.getText().replaceAll("[^0-9]", "");
-                if (cleanText.length() >= 4) {
-                    meterIndexEditText.setText(cleanText);
-                    break;
-                }
-            }
-        }).addOnFailureListener(e -> Log.e(TAG, "ML Kit Error: " + e.getMessage()));
+            boolean found = false;
 
-        recognizer.process(image).addOnSuccessListener(result -> {
             for (Text.TextBlock block : result.getTextBlocks()) {
-                String cleanText = block.getText().replaceAll("[^0-9]", "");
-                if (cleanText.length() >= 4) {
-                    meterIndexEditText.setText(cleanText);
-                    currentReadingSource = "ocr"; // 🔥 S-a folosit camera!
+                String rawText = block.getText();
+                String finalIndex = sanitizeMeterIndex(rawText);
+
+                if (!finalIndex.isEmpty()) {
+                    if (!isInEditMode) {
+                        isInEditMode = true;
+                        toggleEditMode(true);
+                        editModeButton.setBackgroundResource(R.drawable.baseline_done_outline_24);
+                    }
+
+                    meterIndexEditText.setText(finalIndex);
+                    meterIndexEditText.setBackgroundColor(android.graphics.Color.parseColor("#FFF59D"));
+
+                    currentReadingSource = "ocr";
+
+                    calculateAndSaveConsum();
+
+                    Toast.makeText(this, "Verifică indexul marcat cu galben!", Toast.LENGTH_LONG).show();
+                    found = true;
                     break;
                 }
             }
+
+            if (!found) {
+                Toast.makeText(this, "Nu am putut citi clar. Apropie camera!", Toast.LENGTH_SHORT).show();
+            }
+
+            recognizer.close();
+
+        }).addOnFailureListener(e -> {
+            Log.e(TAG, "ML Kit Error", e);
+            Toast.makeText(this, "Eroare OCR!", Toast.LENGTH_SHORT).show();
+            recognizer.close();
         });
     }
 
     private void calculateAndSaveConsum() {
         String currentIdxStr = meterIndexEditText.getText().toString().trim();
         if (currentIdxStr.isEmpty()) return;
-        long currentIndex = Long.parseLong(currentIdxStr);
+
+        long currentIndex;
+
+        try {
+            currentIndex = (long) Double.parseDouble(currentIdxStr);
+        } catch (NumberFormatException e) {
+            Toast.makeText(this, "Index invalid!", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
         int prevMonth = currentMonth - 1;
         int prevYear = currentYear;
-        if (prevMonth < 0) { prevMonth = 11; prevYear--; }
+        if (prevMonth < 0) {
+            prevMonth = 11;
+            prevYear--;
+        }
 
         searchDepth = 0;
         findLastReadingRecursive(prevYear, prevMonth, currentIndex);
@@ -502,29 +583,59 @@ public class MeterReadingActivity extends AppCompatActivity {
     private int searchDepth = 0;
     private void findLastReadingRecursive(int year, int month, long currentIndex) {
         searchDepth++;
-        if (searchDepth > 24) { finalizeConsumption(currentIndex, 0); return; }
+        if (searchDepth > 24) {
+            finalizeConsumption(currentIndex, 0);
+            return;
+        }
 
         getMonthRef(houseNumber, year, month).get().addOnSuccessListener(doc -> {
             if (doc.exists() && doc.contains("Starea Apometrului")) {
-                finalizeConsumption(currentIndex, doc.getLong("Starea Apometrului"));
+
+                Object lastIndexObj = doc.get("Starea Apometrului");
+                Number lastIndex = lastIndexObj instanceof Number ? (Number) lastIndexObj : null;
+
+                if (lastIndex != null) {
+                    finalizeConsumption(currentIndex, lastIndex.longValue());
+                } else {
+                    searchPreviousMonth(year, month, currentIndex);
+                }
+
             } else {
-                int nextYear = year, nextMonth = month - 1;
-                if (nextMonth < 0) { nextMonth = 11; nextYear--; }
-                findLastReadingRecursive(nextYear, nextMonth, currentIndex);
+                searchPreviousMonth(year, month, currentIndex);
             }
+        }).addOnFailureListener(e -> {
+            Log.e(TAG, "Eroare căutare index anterior", e);
+            finalizeConsumption(currentIndex, 0);
         });
+    }
+
+    private void searchPreviousMonth(int year, int month, long currentIndex) {
+        int nextYear = year;
+        int nextMonth = month - 1;
+
+        if (nextMonth < 0) {
+            nextMonth = 11;
+            nextYear--;
+        }
+
+        findLastReadingRecursive(nextYear, nextMonth, currentIndex);
     }
 
     private void finalizeConsumption(long current, long last) {
         long result = Math.max(0, current - last);
 
-        // 🔥 ACTUALIZARE: Doar punem valoarea în UI, NU salvăm în Firebase încă
+        // Intrăm automat în Edit Mode ca operatorul să poată salva cu bifa
+        if (!isInEditMode) {
+            isInEditMode = true;
+            toggleEditMode(true);
+            editModeButton.setBackgroundResource(R.drawable.baseline_done_outline_24);
+        }
+
         consumptionEditText.setText(String.valueOf(result));
 
-        // Declanșăm compararea cu AI-ul pentru ca operatorul să vadă statusul (Normal/Anomalie)
         compareActualWithAI((double) result);
 
-        Toast.makeText(this, "Consum calculat. Verifică și salvează!", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Consum calculat. Verifică și apasă bifa pentru salvare!", Toast.LENGTH_SHORT).show();
     }
 
     private void runAIForecast(List<Double> consumHistory) {
@@ -609,8 +720,12 @@ public class MeterReadingActivity extends AppCompatActivity {
                     if ("avarie".equals(feedback)) {
                         continue; // Ignorăm luna cu avarie
                     }
-                    Number value = (Number) doc.get("Consumatia mc");
-                    if (value != null) lastFetchedHistory.add(value.doubleValue());
+                    Object valueObj = doc.get("Consumatia mc");
+                    Number value = valueObj instanceof Number ? (Number) valueObj : null;
+
+                    if (value != null) {
+                        lastFetchedHistory.add(value.doubleValue());
+                    }
                 }
             }
 
@@ -645,7 +760,12 @@ public class MeterReadingActivity extends AppCompatActivity {
     private Bitmap preProcessBitmap(Bitmap source) {
         int width = source.getWidth();
         int height = source.getHeight();
-        Bitmap bitmap = Bitmap.createBitmap(width, height, source.getConfig());
+
+        Bitmap.Config config = source.getConfig() != null
+                ? source.getConfig()
+                : Bitmap.Config.ARGB_8888;
+
+        Bitmap bitmap = Bitmap.createBitmap(width, height, config);
 
         android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
         android.graphics.Paint paint = new android.graphics.Paint();
@@ -666,5 +786,53 @@ public class MeterReadingActivity extends AppCompatActivity {
         canvas.drawBitmap(source, 0, 0, paint);
 
         return bitmap;
+    }
+
+    private Bitmap cropToMeterWindow(Bitmap src) {
+        int width = src.getWidth();
+        int height = src.getHeight();
+
+        // Definim o bandă orizontală (75% lățime, 22% înălțime)
+        int cropWidth = (int) (width * 0.75);
+        int cropHeight = (int) (height * 0.22);
+
+        int startX = (width - cropWidth) / 2;
+        int startY = (height - cropHeight) / 2;
+
+        // Protecție să nu ieșim din cadrul imaginii
+        startX = Math.max(0, startX);
+        startY = Math.max(0, startY);
+
+        return Bitmap.createBitmap(src, startX, startY, cropWidth, cropHeight);
+    }
+    private String sanitizeMeterIndex(String rawText) {
+        if (rawText == null) return "";
+
+        String cleanedText = rawText.trim();
+
+        // 1. Dacă OCR-ul păstrează virgula/punctul, luăm doar partea dinainte.
+        // Ex: "000010,48" -> "000010"
+        if (cleanedText.contains(",")) {
+            cleanedText = cleanedText.split(",")[0];
+        } else if (cleanedText.contains(".")) {
+            cleanedText = cleanedText.split("\\.")[0];
+        }
+
+        String raw = cleanedText.replaceAll("[^0-9]", "");
+
+        if (raw.length() < 2) return "";
+
+        // 2. Dacă e foarte lung, probabil a prins și zecimalele.
+        // Ex: "00001048" -> "000010"
+        if (raw.length() >= 6) {
+            raw = raw.substring(0, raw.length() - 2);
+        }
+
+        try {
+            return String.valueOf(Integer.parseInt(raw));
+        } catch (NumberFormatException e) {
+            Log.e(TAG, "OCR invalid după sanitize: " + raw, e);
+            return "";
+        }
     }
 }
