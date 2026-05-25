@@ -55,7 +55,9 @@
                             android:text="Owner Name"
                             android:textAlignment="center"
                             android:textColor="@color/RoyalBlue"
-                            android:textSize="18sp"
+                            android:textSize="16sp"
+                            android:maxLines="1"
+                            android:ellipsize="end"
                             android:textStyle="bold" />
 
                         <TextView
@@ -64,7 +66,9 @@
                             android:layout_height="wrap_content"
                             android:text="#00"
                             android:textColor="@color/RoyalBlue"
-                            android:textSize="18sp"
+                            android:textSize="16sp"
+                            android:maxLines="1"
+                            android:ellipsize="end"
                             android:textStyle="bold" />
                     </LinearLayout>
 
@@ -112,7 +116,7 @@
 
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:orientation="horizontal">
                         <ImageButton android:id="@+id/previousYearButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:background="?android:attr/selectableItemBackground" android:src="@drawable/baseline_turn_left_24" />
-                        <TextView android:id="@+id/currentDateTextView" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="January 2024" android:textAlignment="center" android:textColor="@color/RoyalBlue" android:textSize="18sp" android:textStyle="bold" />
+                        <TextView android:id="@+id/currentDateTextView" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="January 2024" android:textAlignment="center" android:textColor="@color/RoyalBlue" android:textSize="16sp" android:maxLines="1" android:ellipsize="end" android:textStyle="bold" />
                         <ImageButton android:id="@+id/nextYearButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:background="?android:attr/selectableItemBackground" android:src="@drawable/baseline_turn_right_24" />
                     </LinearLayout>
 
