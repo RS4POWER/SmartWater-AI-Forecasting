@@ -16,6 +16,7 @@ import android.widget.Toast;
 import com.google.android.gms.tasks.Task;
 import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.QueryDocumentSnapshot;
@@ -338,5 +339,6 @@ public class LocationListActivity extends AppCompatActivity {
             Log.e(TAG, "Eroare la generarea fișierului CSV", e);
             Toast.makeText(this, "Eroare la scrierea fișierului!", Toast.LENGTH_SHORT).show();
         }
+
     }
 }
