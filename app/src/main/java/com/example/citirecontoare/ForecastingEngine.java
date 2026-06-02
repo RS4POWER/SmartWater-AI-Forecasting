@@ -49,52 +49,50 @@ public class ForecastingEngine {
     }
 
     // 3. Metoda de predicție devine acum foarte scurtă
-    public static double predictNextConsumption(List<Double> historyList) {
+    public static double predictNextConsumption(List<Double> historyList, int targetMonthIndex) {
         if (historyList == null || historyList.isEmpty()) return 0.0;
 
-        // 🔥 FALLBACK: Dacă avem doar o lună (după filtrarea avariilor),
-        // predicția este egală cu acea lună.
         if (historyList.size() < 2) {
-            return applySeasonalAdjustment(historyList.get(0));
+            return applySeasonalAdjustment(historyList.get(0), targetMonthIndex, historyList.size());
         }
 
         RegressionModel model = getLinearRegression(historyList);
         double prediction = model.predict(historyList.size() + 1);
 
-        // 🔥 LIMITARE INTELIGENTĂ (Anti-Spike)
-        // Nu lăsăm predicția să sară de 2x față de ultima lună reală
         double lastValue = historyList.get(historyList.size() - 1);
         double maxAllowed = lastValue * 2.0;
 
-        prediction = Math.max(0, prediction); // Nu poate fi negativ
-        prediction = Math.min(prediction, maxAllowed); // Nu poate fi absurd de mare
+        prediction = Math.max(0, prediction);
+        prediction = Math.min(prediction, maxAllowed);
 
-        return applySeasonalAdjustment(prediction);
+        return applySeasonalAdjustment(prediction, targetMonthIndex, historyList.size());
     }
 
-    public static double applySeasonalAdjustment(double basePrediction) {
-        int currentMonth = Calendar.getInstance().get(Calendar.MONTH); // 0=Ian, 11=Dec
+    public static double applySeasonalAdjustment(double basePrediction, int targetMonthIndex, int historySize) {
+        if (historySize < 6) {
+            return Math.max(0, basePrediction);
+        }
 
-        // Tabel de coeficienți lunari (Indexat 0-11)
-        // Valorile sub 1.0 scad predicția (iarna), peste 1.0 o cresc (vara)
         double[] seasonalFactors = {
-                0.82, // Ianuarie (Minim)
-                0.85, // Februarie
-                0.95, // Martie (Începe primăvara)
-                1.00, // Aprilie
-                1.10, // Mai
-                1.30, // Iunie (Vârf de vară)
-                1.40, // Iulie (Vârf de vară)
-                1.35, // August
-                1.05, // Septembrie (Scădere - "September Drop")
-                0.95, // Octombrie
-                0.90, // Noiembrie
-                0.85  // Decembrie
+                0.82,
+                0.85,
+                0.95,
+                1.00,
+                1.10,
+                1.30,
+                1.40,
+                1.35,
+                1.05,
+                0.95,
+                0.90,
+                0.85
         };
 
-        double multiplier = seasonalFactors[currentMonth];
-        double finalPrediction = basePrediction * multiplier;
+        if (targetMonthIndex < 0 || targetMonthIndex > 11) {
+            targetMonthIndex = Calendar.getInstance().get(Calendar.MONTH);
+        }
 
-        return Math.max(0, finalPrediction);
+        double multiplier = seasonalFactors[targetMonthIndex];
+        return Math.max(0, basePrediction * multiplier);
     }
 }

@@ -172,6 +172,7 @@ public class MeterReadingActivity extends AppCompatActivity {
             }
             Intent intent = new Intent(this, ForecastingViewActivity.class);
             intent.putExtra("HISTORY_DATA", lastFetchedHistory);
+            intent.putExtra("TARGET_MONTH_INDEX", currentMonth);
             startActivity(intent);
         });
 
@@ -181,7 +182,7 @@ public class MeterReadingActivity extends AppCompatActivity {
                 btnVerifyAI.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.RED));
                 isAIVerifiedOnce = true;
             } else {
-                saveAIFeedback("confirmat_normal");
+                saveAIFeedback("validat_operator");
                 btnVerifyAI.setText("CONFIRMAT ✅");
                 btnVerifyAI.setEnabled(false);
                 btnVerifyAI.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.GRAY));
@@ -203,10 +204,14 @@ public class MeterReadingActivity extends AppCompatActivity {
     }
 
     private void saveAIFeedback(String status) {
+        Map<String, Object> feedbackData = new HashMap<>();
+        feedbackData.put("ai_feedback", status);
+        feedbackData.put("ai_verified_at", com.google.firebase.Timestamp.now());
+
         getMonthRef(houseNumber, currentYear, currentMonth)
-                .update("ai_feedback", status)
+                .set(feedbackData, com.google.firebase.firestore.SetOptions.merge())
                 .addOnSuccessListener(aVoid -> {
-                    Toast.makeText(this, "AI a învățat acest consum pentru viitor!", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Feedback AI salvat!", Toast.LENGTH_SHORT).show();
                 })
                 .addOnFailureListener(e -> Log.e(TAG, "Eroare feedback AI: " + e.getMessage()));
     }
@@ -271,18 +276,39 @@ public class MeterReadingActivity extends AppCompatActivity {
 
     private void resetAIUI() {
         isAIVerifiedOnce = false;
+
+        // Reset buton validare AI
         btnVerifyAI.setEnabled(true);
         btnVerifyAI.setText("VALIDARE CONSUM");
-        btnVerifyAI.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4169E1")));
+        btnVerifyAI.setBackgroundTintList(
+                android.content.res.ColorStateList.valueOf(
+                        android.graphics.Color.parseColor("#4169E1")
+                )
+        );
         btnVerifyAI.setVisibility(View.GONE);
 
+        // Reset texte/status AI
         textAIStatus.setText("Status: Se așteaptă date...");
         textAIStatus.setTextColor(android.graphics.Color.GRAY);
         aiDividerView.setBackgroundColor(android.graphics.Color.GRAY);
 
-        meterIndexEditText.setBackgroundResource(R.drawable.border);
+        // Reset card AI
+        View cardAI = findViewById(R.id.cardAI);
+        if (cardAI != null) {
+            cardAI.setBackgroundColor(android.graphics.Color.parseColor("#F8FBFF"));
+        }
 
+        // Reset câmp index
+        meterIndexEditText.setAlpha(1.0f);
+        meterIndexEditText.setTextColor(android.graphics.Color.BLACK);
+        meterIndexEditText.setBackgroundResource(R.drawable.border);
+        if (meterIndexEditText.getBackground() != null) {
+            meterIndexEditText.getBackground().clearColorFilter();
+        }
+
+        // Reset câmp consum
         consumptionEditText.setAlpha(1.0f);
+        consumptionEditText.setTextColor(android.graphics.Color.BLACK);
         consumptionEditText.setBackgroundResource(R.drawable.border);
         if (consumptionEditText.getBackground() != null) {
             consumptionEditText.getBackground().clearColorFilter();
@@ -639,7 +665,7 @@ public class MeterReadingActivity extends AppCompatActivity {
     }
 
     private void runAIForecast(List<Double> consumHistory) {
-        aiPredictedValue = ForecastingEngine.predictNextConsumption(consumHistory);
+        aiPredictedValue = ForecastingEngine.predictNextConsumption(consumHistory, currentMonth);
         textPrediction.setText(String.format("Predicție AI: %.2f m³", aiPredictedValue));
         textAIStatus.setText("Trend: Analiză bazată pe ultimele " + consumHistory.size() + " luni");
     }
@@ -716,10 +742,17 @@ public class MeterReadingActivity extends AppCompatActivity {
             for (Object res : results) {
                 DocumentSnapshot doc = (DocumentSnapshot) res;
                 if (doc.exists() && doc.get("Consumatia mc") != null) {
+
+                    Boolean isBaseline = doc.getBoolean("is_baseline");
+                    if (Boolean.TRUE.equals(isBaseline)) {
+                        continue;
+                    }
+
                     String feedback = doc.getString("ai_feedback");
                     if ("avarie".equals(feedback)) {
-                        continue; // Ignorăm luna cu avarie
+                        continue;
                     }
+
                     Object valueObj = doc.get("Consumatia mc");
                     Number value = valueObj instanceof Number ? (Number) valueObj : null;
 
